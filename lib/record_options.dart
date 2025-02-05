@@ -7,6 +7,9 @@ import 'package:firstly/search.dart'; // Import the Search Screen
 import 'package:firstly/settings.dart'; // Import your Settings Screen
 
 class RecordOptions extends StatelessWidget {
+  final List<String> partners;
+  // Accept the partners list in the constructor
+  const RecordOptions({super.key, required this.partners});
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -31,10 +34,12 @@ class RecordOptions extends StatelessWidget {
       ),
       body: Container(
         color: Colors.grey[200], // Light gray background
-        child: Center( // Center content vertically and horizontally
+        child: Center(
+          // Center content vertically and horizontally
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center, // Center vertically
-            crossAxisAlignment: CrossAxisAlignment.center, // Center horizontally
+            crossAxisAlignment:
+                CrossAxisAlignment.center, // Center horizontally
             children: [
               // Option 1: To Create Vendor's Record
               GestureDetector(
@@ -42,7 +47,9 @@ class RecordOptions extends StatelessWidget {
                   // Navigate to Vendor's Record (Profit Record)
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => ProfitRecord()), // Navigate to profit_record.dart
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            ProfitRecord(partners: partners)), // Navigate to profit_record.dart
                   );
                 },
                 child: Column(
@@ -67,7 +74,9 @@ class RecordOptions extends StatelessWidget {
                   // Navigate to Expenditures Record
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => ExpendituresRecord()), // Navigate to expenditures_record.dart
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            ExpendituresRecord(partners: partners)), // Navigate to expenditures_record.dart
                   );
                 },
                 child: Column(

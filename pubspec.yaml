@@ -31,19 +31,27 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # firebase_core: ^2.15.0  # Replace with latest version
+  # cloud_firestore: ^4.9.3  # Replace with latest version
+  firebase_core: ^3.10.1
+  firebase_auth: ^5.4.1
+  cloud_firestore: ^5.6.2
+  cloud_firestore_web: ^4.4.2
+  firebase_auth_web: ^5.13.7
+  shared_preferences: ^2.0.15
+  #
 
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  intl: ^0.18.0
+ # intl: ^0.18.0
+  intl: ^0.20.2
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
+  #firebase_auth:^4.6.3
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
 
