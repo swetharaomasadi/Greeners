@@ -1,11 +1,83 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-class ProfitTillTodayPage extends StatelessWidget {
-  // This function will calculate or fetch the profit till today.
-  // For now, we are assuming a static value for demonstration.
-  double getProfit() {
-    // Replace this with your logic to calculate profit
-    return 1500.75; // Example profit till today
+class ProfitTillTodayPage extends StatefulWidget {
+  const ProfitTillTodayPage({super.key});
+
+  @override
+  _ProfitTillTodayPageState createState() => _ProfitTillTodayPageState();
+}
+
+class _ProfitTillTodayPageState extends State<ProfitTillTodayPage> {
+  double salesRevenue = 0.0;
+  double costOfGoodsSold = 0.0;
+  double netProfit = 0.0;
+
+  // Function to fetch the sales revenue and COGS for the current user
+  Future<void> fetchProfitData() async {
+    try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        print("User is not logged in.");
+        return;
+      }
+
+      final userId = currentUser.uid;
+
+      // Fetch sales revenue (amount_paid from records) for the current user
+      final salesQuerySnapshot = await FirebaseFirestore.instance
+          .collection('records')
+          .where('user_id', isEqualTo: userId) // Filter by current user's ID
+          .get();
+
+      double salesTotal = 0.0;
+      for (var doc in salesQuerySnapshot.docs) {
+        double amountPaid = doc['amount_paid'] ?? 0.0;
+        print("Fetched amount_paid from records: $amountPaid");
+        salesTotal += amountPaid;
+      }
+
+      // Fetch cost of goods sold (amount from expenditures) for the current user
+      final expendituresQuerySnapshot = await FirebaseFirestore.instance
+          .collection('expenditures')
+          .where('user_id', isEqualTo: userId) // Filter by current user's ID
+          .get();
+
+      double expendituresTotal = 0.0;
+      for (var doc in expendituresQuerySnapshot.docs) {
+        if (doc.data().containsKey('amount')) {
+          // Check for 'amount' field
+          double amountSpent = doc['amount'] ?? 0.0;
+          print("Fetched amount from expenditures: $amountSpent");
+          expendituresTotal += amountSpent;
+        } else {
+          print("Field 'amount' does not exist in this document");
+        }
+      }
+
+      // Calculate net profit
+      double profit = salesTotal - expendituresTotal;
+
+      // Update the state with the fetched values
+      setState(() {
+        salesRevenue = salesTotal;
+        costOfGoodsSold = expendituresTotal;
+        netProfit = profit;
+      });
+
+      print("Total Sales Revenue: $salesRevenue");
+      print("Total Cost of Goods Sold: $costOfGoodsSold");
+      print("Net Profit: $netProfit");
+    } catch (e) {
+      print("Error fetching profit data: $e");
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    fetchProfitData(); // Fetch data when the page loads
   }
 
   @override
@@ -20,7 +92,6 @@ class ProfitTillTodayPage extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Title
             Text(
               'Total Profit Till Today',
               style: TextStyle(
@@ -30,19 +101,15 @@ class ProfitTillTodayPage extends StatelessWidget {
               ),
             ),
             SizedBox(height: 20),
-
-            // Display Profit
             Text(
-              '\$${getProfit().toStringAsFixed(2)}', // Display the profit with 2 decimal places
+              '₹${netProfit.toStringAsFixed(2)}', // Replace $ with ₹
               style: TextStyle(
                 fontSize: 40,
                 fontWeight: FontWeight.bold,
-                color: Colors.green,
+                color: netProfit < 0 ? Colors.red : Colors.green,
               ),
             ),
             SizedBox(height: 40),
-
-            // Profit Breakdown (Optional)
             Card(
               elevation: 5,
               child: Padding(
@@ -58,24 +125,19 @@ class ProfitTillTodayPage extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: 10),
-                    _buildProfitRow('Sales Revenue', 3000.00),
-                    _buildProfitRow('Cost of Goods Sold', -1200.00),
-                    _buildProfitRow('Expenses', -300.00),
-                    _buildProfitRow('Other Income', 200.00),
+                    _buildProfitRow('Sales Revenue', salesRevenue),
+                    _buildProfitRow('Cost of Goods Sold', costOfGoodsSold),
                     SizedBox(height: 20),
                     Divider(color: Colors.black),
-                    _buildProfitRow('Net Profit', getProfit()),
+                    _buildProfitRow('Net Profit', netProfit),
                   ],
                 ),
               ),
             ),
             SizedBox(height: 30),
-
-            // Reload Button (Optional)
             ElevatedButton(
               onPressed: () {
-                // Implement the logic to reload or refresh profit data here.
-                // For example, you could call setState or make a network call to fetch live data.
+                fetchProfitData(); // Re-fetch the data when the button is pressed
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                   content: Text('Profit data refreshed'),
                   backgroundColor: Colors.blue,
@@ -94,7 +156,6 @@ class ProfitTillTodayPage extends StatelessWidget {
     );
   }
 
-  // Helper widget to display individual profit breakdown rows
   Widget _buildProfitRow(String label, double amount) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -104,7 +165,7 @@ class ProfitTillTodayPage extends StatelessWidget {
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         Text(
-          '\$${amount.toStringAsFixed(2)}',
+          '₹${amount.toStringAsFixed(2)}', // Replace $ with ₹
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "76806992636",
+    "project_id": "greeners-v1",
+    "storage_bucket": "greeners-v1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:76806992636:android:7438d81c538a9632679d79",
+        "android_client_info": {
+          "package_name": "com.example.firstly"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcmnmM6PkrXlarlibmJj4kQLU96UQEWxo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

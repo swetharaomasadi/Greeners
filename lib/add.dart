@@ -1,23 +1,25 @@
 import 'package:flutter/material.dart';
-import 'home.dart'; // Import HomeScreen
-import 'search.dart'; // Import SearchViewScreen
-import 'settings.dart'; // Import SettingsPage
-import 'record_options.dart'; // Import RecordEntryOptions page
+import 'home.dart';
+import 'search.dart';
+import 'settings.dart';
+import 'record_options.dart';
 
 class AddPage extends StatefulWidget {
+  const AddPage({super.key});
+
   @override
   _AddPageState createState() => _AddPageState();
 }
 
 class _AddPageState extends State<AddPage> {
-  int _selectedIndex = 2; // Start with the Add tab selected.
+  int _selectedIndex = 2;
+  List<String> partners = [];
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
     });
 
-    // Navigation logic for each tab
     switch (index) {
       case 0:
         Navigator.pushReplacement(
@@ -32,7 +34,6 @@ class _AddPageState extends State<AddPage> {
         );
         break;
       case 2:
-        // Stay on Add screen, no navigation needed
         break;
       case 4:
         Navigator.pushReplacement(
@@ -40,6 +41,36 @@ class _AddPageState extends State<AddPage> {
           MaterialPageRoute(builder: (context) => SettingsPage()),
         );
         break;
+    }
+  }
+
+  void _addPartner() async {
+    final String? partnerName = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        TextEditingController controller = TextEditingController();
+        return AlertDialog(
+          title: Text("Enter Partner's Name"),
+          content: TextField(
+            controller: controller,
+            decoration: InputDecoration(hintText: 'Partner name'),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(controller.text);
+              },
+              child: Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (partnerName != null && partnerName.isNotEmpty) {
+      setState(() {
+        partners.add(partnerName);
+      });
     }
   }
 
@@ -54,98 +85,106 @@ class _AddPageState extends State<AddPage> {
           onPressed: () {},
         ),
         title: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image.asset(
-              'assets/logo.png', // Add your logo here
-              height: 80,
-            ),
+            Image.asset('assets/logo.png', height: 60),
           ],
         ),
       ),
-      body: Column(
-        children: [
-          SizedBox(height: 10), // Space from the top
-          // Person icon and text
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                "Profit is shared with",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.purple,
+              // Title with lock symbol and different font
+              Column(
+                children: [
+                  Text(
+                    "Share Profit with",
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: const Color.fromARGB(255, 250, 163, 42),
+                      fontFamily: 'RobotoMono', // Different font for styling
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Icon(Icons.lock, color: Colors.purple, size: 30), // Lock icon
+                  SizedBox(height: 8), // Space between lock and text
+                  Text(
+                    "only with me",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.purple,
+                      fontFamily: 'RobotoMono', // Different font for styling
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 20),
+
+              // Display partners only when the list is not empty
+              if (partners.isNotEmpty)
+                ...partners
+                    .map(
+                      (partner) => Container(
+                        margin: EdgeInsets.symmetric(vertical: 10),
+                        padding:
+                            EdgeInsets.symmetric(vertical: 15, horizontal: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[200],
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          partner,
+                          style: TextStyle(fontSize: 18, color: Colors.black),
+                        ),
+                      ),
+                    )
+                    ,
+
+              // Add Partner Button
+              GestureDetector(
+                onTap: _addPartner,
+                child: CircleAvatar(
+                  radius: 35,
+                  backgroundColor: Colors.grey[200],
+                  child: Icon(Icons.add, size: 40, color: Colors.blue),
                 ),
               ),
+              SizedBox(height: 30),
+
+              // Submit Button
+             // In the _AddPageState class
+
+  // Submit Button on pressed
+  ElevatedButton(
+    onPressed: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RecordOptions(partners: partners), // Pass partners here
+        ),
+      );
+    },
+    style: ElevatedButton.styleFrom(
+      backgroundColor: Colors.green,
+      padding: EdgeInsets.symmetric(horizontal: 60, vertical: 15),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+      ),
+    ),
+    child: Text(
+      "SUBMIT",
+      style: TextStyle(fontSize: 18, color: Colors.white),
+    ),
+  ),
+
             ],
           ),
-          SizedBox(height: 30), // Space below the text
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                // Option: Only Myself
-                Container(
-                  padding: EdgeInsets.symmetric(vertical: 15, horizontal: 20),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    "Only With Me",
-                    style: TextStyle(fontSize: 18, color: Colors.black),
-                  ),
-                ),
-                SizedBox(height: 20),
-                // Add Icon
-                GestureDetector(
-                  onTap: () {
-                    // Add functionality for the "+" button
-                  },
-                  child: Container(
-                    height: 70,
-                    width: 70,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      Icons.add,
-                      size: 40,
-                      color: Colors.blue,
-                    ),
-                  ),
-                ),
-                SizedBox(height: 30),
-                // Submit Button
-                ElevatedButton(
-                  onPressed: () {
-                    // Navigate to RecordEntryOptions page
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => RecordOptions(),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 50, vertical: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                  ),
-                  child: Text(
-                    "SUBMIT",
-                    style: TextStyle(fontSize: 18, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
