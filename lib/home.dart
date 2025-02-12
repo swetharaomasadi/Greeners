@@ -9,7 +9,7 @@ import 'recent_records_page.dart'; // Import the recent records page
 import 'firebase_services.dart'; // Import Firebase services for logout
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore to fetch user details
-
+import 'voice_assistant_provider.dart';
 void main() {
   runApp(MyApp());
 }
@@ -165,20 +165,7 @@ class HomeScreen extends StatelessWidget {
                             height: 10), // Small spacing between name and icon
                         Icon(Icons.waving_hand, color: Colors.orange, size: 40),
                         SizedBox(height: 15), // Spacing before next section
-                        Icon(
-                          Icons.mic,
-                          size: 70,
-                          color: Colors.black,
-                        ),
-                        SizedBox(height: 10),
-                        Text(
-                          'AI Voice Assistance',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: const Color.fromARGB(255, 51, 238, 9),
-                          ),
-                        ),
+                        VoiceAssistantWidget(),
                         SizedBox(height: 25),
                         ElevatedButton(
                           onPressed: () {
@@ -267,7 +254,7 @@ class HomeScreen extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => SearchViewScreen(),
+                    builder: (context) => SearchScreen(),
                   ),
                 );
               },

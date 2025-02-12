@@ -2,10 +2,14 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'view_records.dart';
-import 'ViewDuesPage.dart';
+import 'Delete_records.dart';
+
 import 'ProfilePage.dart';
 import 'Login.dart';
+import 'home.dart';
+import 'search.dart';
+import 'add.dart';
+import 'recent_records_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,23 +29,42 @@ class _SettingsPageState extends State<SettingsPage> {
 
   // This function will handle the navigation logic based on the selected index.
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+  if (index == _selectedIndex) return; // Prevent reloading the same page
 
-    // Navigate to the appropriate page based on the selected tab.
-    switch (index) {
-      case 0:
-        // Navigate to Home
-        break;
-      case 1:
-        // Navigate to Search
-        break;
-      case 2:
-        // Navigate to Add
-        break;
-    }
+  switch (index) {
+    case 0:
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => HomeScreen()), // Navigate to Home
+      );
+      break;
+    case 1:
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => SearchScreen()), // Navigate to Search
+      );
+      break;
+    case 2:
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => AddPage()), // Navigate to Add
+      );
+      break;
+    case 3:
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => RecentRecordsPage()), // Navigate to Recent
+      );
+      break;
+    case 4:
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => SettingsPage()), // Stay on Settings Page
+      );
+      break;
   }
+}
+
 
   // Show dialog to update user name
   void _changeUserName() async {
@@ -311,16 +334,11 @@ Future<void> _deleteUserAccount(User user) async {
   void _viewRecords() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => ViewRecordsPage()),
+      MaterialPageRoute(builder: (context) => DeleteRecords()),
     );
   }
 
-  void _viewDues() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => ViewDuesPage()),
-    );
-  }
+  
 
   void _viewProfile() {
     Navigator.push(
@@ -351,10 +369,9 @@ Future<void> _deleteUserAccount(User user) async {
             _buildSettingOption('Change Password', Icons.lock, _changePassword),
             _buildSettingOption(
                 'Change Phone Number', Icons.phone, _changePhoneNumber),
-            _buildSettingOption('View Records', Icons.library_books,
+            _buildSettingOption('Delete Records', Icons.library_books,
                 _viewRecords), // Added View Records
-            _buildSettingOption('View Dues', Icons.library_books,
-                _viewDues), // Added View Records
+             // Added View Records
             // Added View Records
             _buildSettingOption(
                 'Delete Account', Icons.delete_forever, _deleteAccount),

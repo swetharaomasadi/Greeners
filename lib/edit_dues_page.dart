@@ -3,230 +3,193 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class EditDuesPage extends StatefulWidget {
-  const EditDuesPage({super.key});
-
   @override
   _EditDuesPageState createState() => _EditDuesPageState();
 }
 
 class _EditDuesPageState extends State<EditDuesPage> {
-  final TextEditingController _vendorController = TextEditingController();
-  final TextEditingController _itemController = TextEditingController();
-  DateTime? _selectedDate;
-  double _dueAmount = 0.0;
-  double _amountPaid = 0.0;
-  String? _documentId; // Firestore document ID to update
-
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  User? user;
+  String? selectedRecordId;
+  double? oldDue;
+  double? oldAmountPaid;
+  final TextEditingController _dueController = TextEditingController();
 
-  // Function to get the current user's UID
-  String getCurrentUserId() {
-    final User? user = _auth.currentUser;
-    if (user != null) {
-      return user.uid;
-    } else {
-      throw Exception("User not logged in");
-    }
+  @override
+  void initState() {
+    super.initState();
+    user = _auth.currentUser;
   }
 
-  // Function to pick a date
-  Future<void> _pickDueDate(BuildContext context) async {
-    DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2100),
-    );
+  Future<void> updateDueAmount() async {
+    if (selectedRecordId == null || oldDue == null || oldAmountPaid == null) return;
 
-    if (pickedDate != null) {
-      setState(() {
-        _selectedDate = pickedDate;
-      });
-
-      // Fetch dues from Firestore
-      _fetchDues();
-    }
-  }
-
-  // Fetch dues from Firestore based on vendor, item, date, and current user ID
-  Future<void> _fetchDues() async {
-    final vendor = _vendorController.text.trim().toLowerCase();
-    final item = _itemController.text.trim().toLowerCase();
-
-    if (vendor.isEmpty || item.isEmpty || _selectedDate == null) return;
-
-    try {
-      final currentUserId = getCurrentUserId(); // Get current user's UID
-
-      QuerySnapshot querySnapshot = await _firestore
-          .collection('records')
-          .where('vendor', isEqualTo: vendor)
-          .where('item', isEqualTo: item)
-          .where('user_id', isEqualTo: currentUserId) // Filter by user ID
-          .orderBy('timestamp', descending: true)
-          .limit(1)
-          .get();
-
-      if (querySnapshot.docs.isNotEmpty) {
-        var doc = querySnapshot.docs.first;
-        setState(() {
-          _dueAmount = (doc['due_amount'] ?? 0).toDouble();
-          _amountPaid = (doc['amount_paid'] ?? 0).toDouble();
-          _documentId = doc.id; // Store Firestore document ID for updating
-        });
-      } else {
-        setState(() {
-          _dueAmount = 0.0;
-          _amountPaid = 0.0;
-          _documentId = null;
-        });
-      }
-    } catch (error) {
-      // print("Error fetching dues: $error");
+    double? enteredAmount = double.tryParse(_dueController.text.trim());
+    if (enteredAmount == null || enteredAmount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text("Error fetching dues"), backgroundColor: Colors.red),
+        SnackBar(content: Text("Enter a valid amount!")),
       );
+      return;
     }
-  }
 
-  // Save dues (update Firestore)
-  Future<void> _saveDues() async {
-    if (_documentId == null || _dueAmount == 0.0) {
+    double newDue = oldDue! - enteredAmount;
+    double newAmountPaid = oldAmountPaid! + enteredAmount;
+
+    if (newDue < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('No due amount to update!'),
-            backgroundColor: Colors.red),
+        SnackBar(content: Text("Amount cannot exceed the due balance!")),
       );
       return;
     }
 
     try {
-      DocumentReference docRef =
-          _firestore.collection('records').doc(_documentId);
-
-      await _firestore.runTransaction((transaction) async {
-        DocumentSnapshot snapshot = await transaction.get(docRef);
-
-        if (!snapshot.exists) {
-          throw Exception("Record does not exist!");
-        }
-
-        double currentPaid = snapshot['amount_paid'];
-
-        transaction.update(docRef, {
-          'due_amount': 0.0,
-          'amount_paid': currentPaid + _dueAmount, // Add due to paid amount
-        });
-      });
-
-      setState(() {
-        _dueAmount = 0.0; // Update UI
+      await FirebaseFirestore.instance.collection('records').doc(selectedRecordId).update({
+        'due_amount': newDue,
+        'amount_paid': newAmountPaid,
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Dues updated successfully!'),
-            backgroundColor: Colors.green),
+        SnackBar(content: Text("Due updated successfully!")),
       );
-    } catch (error) {
-      print("Error updating dues: $error");
+
+      // Close the dialog
+      Navigator.of(context).pop();
+
+      // Update UI
+      setState(() {
+        if (newDue == 0) {
+          selectedRecordId = null;
+          oldDue = null;
+          oldAmountPaid = null;
+        }
+        _dueController.clear();
+      });
+
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text('Failed to update dues!'),
-            backgroundColor: Colors.red),
+        SnackBar(content: Text("Error updating due: $e")),
       );
     }
+  }
+
+  void showDueDialog(String recordId, double due, double amountPaid) {
+    setState(() {
+      selectedRecordId = recordId;
+      oldDue = due;
+      oldAmountPaid = amountPaid;
+    });
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Update Due Amount", textAlign: TextAlign.center),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text("Current Due: ₹${oldDue!.toStringAsFixed(2)}", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              Text("Amount Paid: ₹${oldAmountPaid!.toStringAsFixed(2)}", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              SizedBox(height: 10),
+              TextField(
+                controller: _dueController,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
+                decoration: InputDecoration(
+                  hintText: "Enter amount",
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+              },
+              child: Text("Cancel", style: TextStyle(color: Colors.red, fontSize: 16)),
+            ),
+            ElevatedButton(
+              onPressed: updateDueAmount,
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+              child: Text("Confirm", style: TextStyle(fontSize: 16)),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Edit Dues'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Vendor Name
-            TextFormField(
-              controller: _vendorController,
-              decoration: InputDecoration(
-                labelText: 'Vendor Name',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) => _fetchDues(),
-            ),
-            SizedBox(height: 20),
+      appBar: AppBar(title: Text("Edit Dues")),
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('records')
+                  .where('user_id', isEqualTo: user?.uid)
+                  .where('due_amount', isGreaterThan: 0)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return Center(child: CircularProgressIndicator());
+                }
+                var records = snapshot.data!.docs;
+                if (records.isEmpty) {
+                  return Center(child: Text("No dues to edit!"));
+                }
 
-            // Item Name
-            TextFormField(
-              controller: _itemController,
-              decoration: InputDecoration(
-                labelText: 'Item Name',
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) => _fetchDues(),
-            ),
-            SizedBox(height: 20),
+                return ListView.builder(
+                  itemCount: records.length,
+                  itemBuilder: (context, index) {
+                    var record = records[index];
 
-            // Due Date (with Date Picker)
-            InkWell(
-              onTap: () => _pickDueDate(context),
-              child: InputDecorator(
-                decoration: InputDecoration(
-                  labelText: 'Select Due Date',
-                  border: OutlineInputBorder(),
-                ),
-                child: Text(
-                  _selectedDate != null
-                      ? "${_selectedDate!.year}-${_selectedDate!.month}-${_selectedDate!.day}"
-                      : "Tap to select date",
-                  style: TextStyle(fontSize: 16, color: Colors.black),
-                ),
-              ),
+                    return Card(
+                      color: Colors.grey[200],
+                      margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                      child: ListTile(
+                        leading: Icon(Icons.shopping_cart, color: Colors.blue),
+                        title: Text(
+                          "Crop: ${record['item']}",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text("Vendor: ${record['vendor']}"),
+                            Text("Kgs: ${record['kgs']}"),
+                            Text("Cost per Kg: ₹${record['cost_per_kg']}"),
+                            Text(
+                              "Due: ₹${record['due_amount']}",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red,
+                              ),
+                            ),
+                            Text(
+                              "Amount Paid: ₹${record['amount_paid']}",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                        trailing: Icon(Icons.edit, color: Colors.green),
+                        onTap: () {
+                          showDueDialog(record.id, record['due_amount'].toDouble(), record['amount_paid'].toDouble());
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
             ),
-            SizedBox(height: 20),
-
-            // Due Amount (Non-editable)
-            TextFormField(
-              controller:
-                  TextEditingController(text: _dueAmount.toStringAsFixed(2)),
-              readOnly: true,
-              decoration: InputDecoration(
-                labelText: 'Due Amount',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            SizedBox(height: 20),
-
-            // Amount Paid (Non-editable)
-            TextFormField(
-              controller:
-                  TextEditingController(text: _amountPaid.toStringAsFixed(2)),
-              readOnly: true,
-              decoration: InputDecoration(
-                labelText: 'Amount Paid',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            SizedBox(height: 30),
-
-            // Save Button
-            ElevatedButton(
-              onPressed: _saveDues,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                textStyle: TextStyle(fontSize: 18),
-              ),
-              child: Text('Save Dues'),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

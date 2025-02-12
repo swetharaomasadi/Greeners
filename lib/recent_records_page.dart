@@ -1,6 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart'; 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'home.dart';
+import 'search_date.dart';
+import 'search.dart';
+import 'settings.dart';
+import 'add.dart';
 
 class RecentRecordsPage extends StatefulWidget {
   const RecentRecordsPage({super.key});
@@ -10,156 +15,229 @@ class RecentRecordsPage extends StatefulWidget {
 }
 
 class _RecentRecordsPageState extends State<RecentRecordsPage> {
-  late Stream<QuerySnapshot> _recentRecordsStream;
+  int _selectedIndex = 3; // Recent page index
+  List<QueryDocumentSnapshot>? _records;
+  String? _selectedCollection;
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
+    _getCurrentUser();
+    _fetchRecentRecords('records');
+  }
 
-    // Fetch the logged-in user's ID
-    String userId = FirebaseAuth.instance.currentUser!.uid;
+  void _getCurrentUser() {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      setState(() {
+        _currentUserId = user.uid;
+      });
+    }
+  }
 
-    // Print userId
-    print('User ID: $userId');
+  Future<void> _fetchRecentRecords(String collection) async {
+    if (_currentUserId == null) return;
 
-    // Fetch records where the user_id matches the logged-in user's ID and timestamp is within the last 24 hours
-    _recentRecordsStream = FirebaseFirestore.instance
-        .collection('records')
-        .where('user_id', isEqualTo: userId) // Filter by logged-in user's ID
-        .where('timestamp',
-            isGreaterThan: Timestamp.fromDate(
-                DateTime.now().subtract(Duration(days: 1)))) // Last 24 hours
-        .orderBy('timestamp', descending: true) // Recent first
-        .snapshots();
+    Timestamp last24Hours = Timestamp.fromDate(
+      DateTime.now().subtract(const Duration(hours: 24)),
+    );
 
-    // We cannot directly print the stream like a variable, but we can listen for the data
- 
+    QuerySnapshot snapshot = await FirebaseFirestore.instance
+        .collection(collection)
+        .where('timestamp', isGreaterThanOrEqualTo: last24Hours)
+        .where('user_id', isEqualTo: _currentUserId)
+        .orderBy('timestamp', descending: true)
+        .get();
+
+    setState(() {
+      _records = snapshot.docs;
+      _selectedCollection = collection;
+    });
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
+
+    switch (index) {
+      case 0:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => HomeScreen()),
+        );
+        break;
+      case 1:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => SearchScreen()),
+        );
+        break;
+      case 2:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => AddPage()),
+        );
+        break;
+      case 3:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => RecentRecordsPage()),
+        );
+        break;
+      case 4:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => SettingsPage()),
+        );
+        break;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.orange.shade700,
-        elevation: 4,
-        title: Text(
+        title: const Text(
           'Recent Records',
           style: TextStyle(
-            fontSize: 24,
+            fontSize: 22,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
         ),
+        backgroundColor: Colors.deepOrange,
         centerTitle: true,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _recentRecordsStream,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return Center(
-                child: Text('No records found in the last 24 hours.',
-                    style: TextStyle(fontSize: 18)));
-          }
-
-          var records = snapshot.data!.docs;
-          print("Records List Length: ${records.length}");
-
-          // Now print individual records for debugging
-     
-          return ListView.builder(
-            padding: EdgeInsets.all(12),
-            itemCount: records.length,
-            itemBuilder: (context, index) {
-              var record = records[index];
-              double totalBill = record['total_bill'] ?? 0.0;
-              double amountPaid = record['amount_paid'] ?? 0.0;
-              double dues = totalBill - amountPaid;
-
-              return Card(
-                margin: EdgeInsets.symmetric(vertical: 10),
-                color: Colors.white,
-                elevation: 6,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.shopping_cart, color: Colors.orange, size: 24),
-                          SizedBox(width: 8),
-                          Text(
-                            record['item'] ?? 'No item',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.person, color: Colors.blue, size: 22),
-                          SizedBox(width: 8),
-                          Text(
-                            'Vendor: ${record['vendor']}',
-                            style: TextStyle(fontSize: 16, color: Colors.blue.shade700),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.attach_money, color: Colors.green, size: 22),
-                          SizedBox(width: 8),
-                          Text(
-                            'Total Bill: ₹${totalBill.toStringAsFixed(2)}',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.payment, color: Colors.teal, size: 22),
-                          SizedBox(width: 8),
-                          Text(
-                            'Amount Paid: ₹${amountPaid.toStringAsFixed(2)}',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(Icons.warning,
-                              color: dues > 0 ? Colors.red : Colors.green,
-                              size: 22),
-                          SizedBox(width: 8),
-                          Text(
-                            dues > 0
-                                ? 'Dues: ₹${dues.toStringAsFixed(2)}'
-                                : 'No Dues 🎉',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: dues > 0 ? Colors.red : Colors.green,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _selectedCollection == 'records'
+                        ? Colors.deepOrange
+                        : Colors.grey,
                   ),
+                  onPressed: () => _fetchRecentRecords('records'),
+                  child: const Text('Profit Records'),
                 ),
-              );
-            },
-          );
-        },
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _selectedCollection == 'expenditures'
+                        ? Colors.deepOrange
+                        : Colors.grey,
+                  ),
+                  onPressed: () => _fetchRecentRecords('expenditures'),
+                  child: const Text('Expenditure Records'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: _records == null
+                  ? const Center(child: Text('Loading records...'))
+                  : _records!.isEmpty
+                      ? const Center(child: Text('No recent records found'))
+                      : ListView.builder(
+                          itemCount: _records!.length,
+                          itemBuilder: (context, index) {
+                            var record =
+                                _records![index].data() as Map<String, dynamic>;
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              elevation: 4,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.person,
+                                            color: Colors.deepPurple, size: 26),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Partner: ${record['partner'] ?? 'No Partner'}',
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.deepPurple,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            maxLines: 1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const Divider(),
+                                    if (_selectedCollection == 'records') ...[
+                                      buildRow(Icons.eco, 'Crop', record['item'], Colors.green),
+                                      buildRow(Icons.store, 'Vendor', record['vendor'], Colors.blue),
+                                      buildRow(Icons.attach_money, 'Total Bill', '₹${record['total_bill'] ?? '0'}', Colors.purple),
+                                      buildRow(Icons.payment, 'Amount Paid', '₹${record['amount_paid'] ?? '0'}', Colors.teal),
+                                      buildRow(Icons.warning, 'Dues', '₹${record['due_amount'] ?? '0'}', Colors.red),
+                                    ] else ...[
+                                      buildRow(Icons.eco, 'Crop', record['crop_name'], Colors.green),
+                                      buildRow(Icons.description, 'Description', record['description'], Colors.grey),
+                                      buildRow(Icons.money, 'Amount', '₹${record['amount'] ?? '0'}', Colors.blue),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Colors.black,
+        unselectedItemColor: Colors.black,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home, size: 40), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.search, size: 40), label: 'Search'),
+          BottomNavigationBarItem(icon: Icon(Icons.add, size: 40), label: 'Add'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.access_time, size: 40, color: Colors.blue), label: 'Recent'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings, size: 40), label: 'Settings'),
+        ],
+      ),
+    );
+  }
+
+  Widget buildRow(IconData icon, String label, dynamic value, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 26),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label: ${value ?? 'N/A'}',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ),
+        ],
       ),
     );
   }

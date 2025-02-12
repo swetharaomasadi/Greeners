@@ -5,6 +5,8 @@ import 'firebase_options.dart'; // Auto-generated file
 import 'home.dart'; // Home screen
 // Login page
 import 'signup.dart'; // SignUp page
+import 'package:provider/provider.dart';
+import 'voice_assistant_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,7 +14,14 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(MyApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => VoiceAssistantProvider()),
+      ],
+      child: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
