@@ -164,8 +164,7 @@ class HomeScreen extends StatelessWidget {
                         SizedBox(
                             height: 10), // Small spacing between name and icon
                         Icon(Icons.waving_hand, color: Colors.orange, size: 40),
-                        SizedBox(height: 15), // Spacing before next section
-                        VoiceAssistantWidget(),
+                       
                         SizedBox(height: 25),
                         ElevatedButton(
                           onPressed: () {

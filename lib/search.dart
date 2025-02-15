@@ -6,8 +6,6 @@ import 'search_crop.dart';
 import 'settings.dart';
 import 'add.dart';
 import 'recent_records_page.dart';
-import 'voice_assistant_provider.dart';
-
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -97,8 +95,7 @@ class _SearchViewScreenState extends State<SearchScreen> {
       ),
       body: Column(
         children: [
-          const SizedBox(height: 30),
-          VoiceAssistantWidget(),
+          
           const SizedBox(height: 20),
           Center(
             child: Column(
