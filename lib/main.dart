@@ -3,7 +3,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart'; // Auto-generated file
 import 'home.dart'; // Home screen
-// Login page
 import 'signup.dart'; // SignUp page
 import 'package:provider/provider.dart';
 import 'voice_assistant_provider.dart';
@@ -47,8 +46,7 @@ class _AuthCheckState extends State<AuthCheck> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance
-          .authStateChanges(), // Listen for auth state changes
+      stream: FirebaseAuth.instance.authStateChanges(), // Listen for auth state changes
       builder: (context, snapshot) {
         // While waiting for auth state, show loading spinner
         if (snapshot.connectionState == ConnectionState.waiting) {

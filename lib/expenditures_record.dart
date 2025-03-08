@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter/services.dart';
 
 class ExpendituresRecord extends StatefulWidget {
@@ -19,40 +19,46 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _cropController = TextEditingController();
   User? user = FirebaseAuth.instance.currentUser;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   late stt.SpeechToText _speech;
-  late FlutterTts _tts;
   bool _isListening = false;
+  String _assistantMessage = "Tap the mic to start voice input.";
   int? _activeFieldIndex;
+  final List<TextEditingController> _controllers = [];
+  bool _isSubmitEnabled = false;
+  bool _isDataSubmitted = false;
+  Timer? _timeoutTimer;
   String? _amountError;
-  bool _isButtonEnabled = false;
 
   @override
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
-    _tts = FlutterTts();
-
-    _descriptionController.addListener(_validateFields);
-    _amountController.addListener(_validateFields);
-    _cropController.addListener(_validateFields);
+    _controllers.addAll([
+      _descriptionController,
+      _amountController,
+      _cropController,
+    ]);
+    _descriptionController.addListener(_validateForm);
+    _amountController.addListener(_validateForm);
+    _cropController.addListener(_validateForm);
   }
 
   @override
   void dispose() {
-    _speech.stop();
-    _descriptionController.dispose();
-    _amountController.dispose();
-    _cropController.dispose();
     super.dispose();
+    _speech.stop();
+    _timeoutTimer?.cancel();
+    for (var controller in _controllers) {
+      controller.dispose();
+    }
+    _stopListening();
   }
 
-  void _validateFields() {
+  void _validateForm() {
     setState(() {
-      _isButtonEnabled = _descriptionController.text.isNotEmpty &&
-          _amountController.text.isNotEmpty &&
-          _cropController.text.isNotEmpty &&
-          isValidNumber(_amountController.text);
+      _isSubmitEnabled = _controllers.every((controller) => controller.text.isNotEmpty);
     });
   }
 
@@ -85,6 +91,7 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
       setState(() {
         _isListening = true;
         _activeFieldIndex = fieldIndex;
+        _assistantMessage = "Voice input active. Please speak.";
       });
     }
 
@@ -92,21 +99,37 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
       onResult: (result) {
         if (result.recognizedWords.isNotEmpty && mounted) {
           setState(() {
-            _getController(fieldIndex).text = result.recognizedWords.toLowerCase();
+            if (fieldIndex == 2) {
+              _getController(fieldIndex).text = _extractNumber(result.recognizedWords).toString();
+            } else {
+              _getController(fieldIndex).text = result.recognizedWords.toLowerCase();
+            }
+            _validateForm();
           });
         }
       },
       listenMode: stt.ListenMode.dictation,
-      partialResults: false,
+      partialResults: true,
       pauseFor: Duration(seconds: 2),
       onSoundLevelChange: (level) {
         if (level < 0.1) {
-          Future.delayed(Duration(seconds: 2), () {
-            if (_isListening) _stopListening();
-          });
+          _startTimeout();
+        } else {
+          _cancelTimeout();
         }
       },
     );
+  }
+
+  void _startTimeout() {
+    _timeoutTimer?.cancel();
+    _timeoutTimer = Timer(Duration(seconds: 2), () {
+      if (_isListening) _stopListening();
+    });
+  }
+
+  void _cancelTimeout() {
+    _timeoutTimer?.cancel();
   }
 
   void _stopListening() async {
@@ -116,6 +139,7 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
         setState(() {
           _isListening = false;
           _activeFieldIndex = null;
+          _assistantMessage = "Tap the mic to start voice input.";
         });
       }
     }
@@ -134,76 +158,251 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
     }
   }
 
-  void _submitExpenditure() {
-    if (!_isButtonEnabled) return;
+  double _extractNumber(String input) {
+    final number = RegExp(r'[\d]+(\.[\d]+)?').stringMatch(input);
+    return double.tryParse(number ?? '0') ?? 0.0;
+  }
 
+  Future<void> _submitExpenditure() async {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
     String description = _descriptionController.text.trim().toLowerCase();
-    String amountText = _amountController.text.trim();
     String cropName = _cropController.text.trim().toLowerCase();
+    double amountSpent = double.tryParse(_amountController.text.trim()) ?? 0.0;
 
     setState(() {
-      _amountError = isValidNumber(amountText) ? null : "Enter a valid numeric amount";
+      _amountError = amountSpent > 0 ? null : "Enter a valid numeric amount";
     });
 
     if (description.isNotEmpty && cropName.isNotEmpty && _amountError == null && user != null) {
-      _showConfirmationDialog(description, amountText, cropName);
+      String currentDate = DateTime.now().toIso8601String().split('T').first;
+
+      Map<String, dynamic> recordData = {
+        'date': currentDate,
+        'typ': 'exp',
+        'partner': widget.partner,
+        'c_id': cropName,
+        'desc': description,
+        'amt': amountSpent,
+      };
+
+      WriteBatch batch = _firestore.batch();
+      try {
+        // Update records
+        DocumentReference recordDocRef = await _getOrCreateDoc('records', user.uid, 'r');
+        DocumentSnapshot recordSnapshot = await recordDocRef.get();
+        Map<String, dynamic>? recordDataMap = recordSnapshot.data() as Map<String, dynamic>?;
+        List<dynamic> records = List.from(recordDataMap?['r'] ?? []);
+        bool recordUpdated = false;
+        for (var record in records) {
+          if (record is Map<String, dynamic> &&
+              record['c_id'] == cropName &&
+              record['partner'] == widget.partner &&
+              record['desc'] == description &&
+              record['date'] == currentDate) {
+            record['amt'] = FieldValue.increment(amountSpent);
+            recordUpdated = true;
+            break;
+          }
+        }
+
+        if (!recordUpdated) {
+          records.add(recordData);
+        }
+
+        batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
+
+        // Update profit data
+        await _updateProfits(user.uid, batch, cropName, amountSpent);
+
+        await batch.commit();
+
+        _clearForm();
+        setState(() {
+          _isDataSubmitted = true;
+        });
+
+        Future.delayed(const Duration(seconds: 3), () {
+          setState(() {
+            _isDataSubmitted = false;
+          });
+        });
+      } catch (e, stackTrace) {
+        _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
+        print('Error submitting record: $e');
+        print('Stack trace: $stackTrace');
+      }
     }
   }
 
-  void _showConfirmationDialog(String description, String amount, String cropName) {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
+  Future<void> _updateProfits(String userId, WriteBatch batch, String cropName, double amountSpent) async {
+    DocumentReference? profitDocRef = await _getFirstDoc('partners', userId);
+    bool profitUpdated = false;
 
+    while (profitDocRef != null) {
+      DocumentSnapshot profitSnapshot = await profitDocRef.get();
+      Map<String, dynamic>? data = profitSnapshot.data() as Map<String, dynamic>? ?? {};
+      Map<String, dynamic> profits = data['profits'] ?? {};
+
+      // Check if partner exists in profits
+      Map<String, dynamic> partnerProfits = (profits[widget.partner] as Map<String, dynamic>?) ?? {'crops': {}};
+      Map<String, dynamic> cropProfits = (partnerProfits['crops'][cropName] as Map<String, dynamic>?) ?? {};
+
+      cropProfits['texp'] = FieldValue.increment(amountSpent);
+      cropProfits['tp'] = FieldValue.increment(-amountSpent);
+      cropProfits['tear'] = cropProfits['tear'] ?? 0; // Ensure tear is 0 if not present
+      cropProfits['tw'] = cropProfits['tw'] ?? 0; // Ensure tw is 0 if not present
+      partnerProfits['tear'] = partnerProfits['tear'] ?? 0;
+      partnerProfits['texp'] = FieldValue.increment(amountSpent);
+      partnerProfits['tp'] = FieldValue.increment(-amountSpent);
+      partnerProfits['crops'][cropName] = cropProfits;
+      profits[widget.partner] = partnerProfits;
+
+      batch.set(profitDocRef, {'profits': profits}, SetOptions(merge: true));
+      profitUpdated = true;
+      break;
+    }
+
+    if (!profitUpdated) {
+      // Create a new document if needed
+      DocumentReference newProfitDocRef = await _getOrCreateDoc('partners', userId, 'profits');
+      batch.set(newProfitDocRef, {
+        'profits': {
+          widget.partner: {
+            'crops': {
+              cropName: {
+                'texp': FieldValue.increment(amountSpent),
+                'tp': FieldValue.increment(-amountSpent),
+                'tear': 0,
+                'tw': 0,
+              }
+            },
+            'texp': FieldValue.increment(amountSpent),
+            'tp': FieldValue.increment(-amountSpent),
+            'tear': 0,
+          }
+        }
+      }, SetOptions(merge: true));
+    }
+  }
+
+  Future<DocumentReference> _getOrCreateDoc(String collection, String userId, String field) async {
+    try {
+      QuerySnapshot existingDocs = await _firestore.collection(collection)
+          .where('u_id', isEqualTo: userId)
+          .orderBy('created_at', descending: true)
+          .limit(1)
+          .get();
+
+      if (existingDocs.docs.isNotEmpty) {
+        DocumentReference existingDocRef = existingDocs.docs.first.reference;
+        DocumentSnapshot existingDocSnapshot = await existingDocRef.get();
+
+        if (existingDocSnapshot.exists) {
+          int docSize = existingDocSnapshot.data()?.toString().length ?? 0;
+          if (docSize < 0.8 * 1024) {
+            return existingDocRef;
+          } else {
+            String newDocId = '${userId}_${existingDocs.docs.length + 1}';
+            await existingDocRef.update({'next_doc_id': newDocId});
+            DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
+            await newDocRef.set({
+              'created_at': FieldValue.serverTimestamp(),
+              'u_id': userId,
+              field: []
+            }, SetOptions(merge: true));
+            return newDocRef;
+          }
+        }
+      }
+
+      String newDocId = existingDocs.docs.isEmpty ? userId : '${userId}_${existingDocs.docs.length + 1}';
+      DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
+      await newDocRef.set({
+        'created_at': FieldValue.serverTimestamp(),
+        'u_id': userId,
+        field: []
+      }, SetOptions(merge: true));
+      return newDocRef;
+    } catch (e) {
+      print('Error getting or creating document: $e');
+      rethrow;
+    }
+  }
+
+  Future<DocumentReference?> _getFirstDoc(String collection, String userId) async {
+    QuerySnapshot existingDocs = await _firestore.collection(collection)
+        .where('u_id', isEqualTo: userId)
+        .orderBy('created_at', descending: true)
+        .limit(1)
+        .get();
+
+    if (existingDocs.docs.isNotEmpty) {
+      return existingDocs.docs.first.reference;
+    }
+    return null;
+  }
+
+  void _clearForm() {
+    for (var controller in _controllers) {
+      controller.clear();
+    }
+    setState(() {
+      _isSubmitEnabled = false;
+    });
+  }
+
+  void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Confirm Submission'),
-          content: Text(
-            'Crop Name: $cropName\n'
-            'Description: $description\n'
-            'Amount: $amount',
-          ),
-          actions: [
+          title: Text("Error"),
+          content: Text(message),
+          actions: <Widget>[
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('Cancel'),
+              child: Text("Cancel"),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
             ),
             ElevatedButton(
-              onPressed: () async {
+              child: Text("Retry"),
+              onPressed: () {
                 Navigator.of(context).pop();
-
-                try {
-                  await FirebaseFirestore.instance.collection('expenditures').add({
-                    'user_id': user!.uid,
-                    'description': description,
-                    'amount': double.tryParse(amount) ?? 0.0,
-                    'partner': widget.partner,
-                    'crop_name': cropName,
-                    'timestamp': FieldValue.serverTimestamp(),
-                  });
-
-                  _descriptionController.clear();
-                  _amountController.clear();
-                  _cropController.clear();
-
-                  if (mounted) {
-                    scaffoldMessenger.showSnackBar(
-                      SnackBar(content: Text('Expenditure added successfully!')),
-                    );
-                  }
-
-                  setState(() {
-                    _isButtonEnabled = false;
-                  });
-                } catch (e) {
-                  if (mounted) {
-                    scaffoldMessenger.showSnackBar(
-                      SnackBar(content: Text('Error adding expenditure: $e')),
-                    );
-                  }
-                }
+                _submitExpenditure();
               },
-              child: Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showConfirmationDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("Confirm Submission"),
+          content: Text(
+            'Crop Name: ${_cropController.text}\n'
+            'Description: ${_descriptionController.text}\n'
+            'Amount: ${_amountController.text}',
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text("Cancel"),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            ElevatedButton(
+              child: Text("Confirm"),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _submitExpenditure();
+              },
             ),
           ],
         );
@@ -213,7 +412,7 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
 
   Widget _buildTextField(String label, TextEditingController controller, int index, {bool isNumeric = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      padding: const EdgeInsets.symmetric(vertical: 12.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -231,6 +430,9 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
                     border: OutlineInputBorder(),
                     errorText: isNumeric && _amountError != null ? _amountError : null,
                   ),
+                  onChanged: (value) {
+                    _validateForm();
+                  },
                 ),
               ),
               IconButton(
@@ -250,23 +452,63 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
     );
   }
 
+  Widget _buildVoiceAssistantDisplay() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12.0),
+      child: Text(
+        _assistantMessage,
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+      ),
+    );
+  }
+
+  Widget _buildConfirmationMessage() {
+    return _isDataSubmitted
+        ? Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12.0),
+            child: Text(
+              'Data submitted successfully!',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green),
+            ),
+          )
+        : Container();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final Map<String, TextEditingController> textFields = {
+      "Crop Name": _cropController,
+      "Description": _descriptionController,
+      "Amount": _amountController,
+    };
+
     return Scaffold(
       appBar: AppBar(title: Text("Enter Expenditures")),
       body: Padding(
         padding: EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            _buildTextField("Crop Name", _cropController, 0),
-            _buildTextField("Description", _descriptionController, 1),
-            _buildTextField("Amount", _amountController, 2, isNumeric: true),
-            SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _isButtonEnabled ? _submitExpenditure : null,
-              child: Text("Submit"),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Partner: ${widget.partner}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
+              _buildVoiceAssistantDisplay(),
+              _buildConfirmationMessage(),
+              ...textFields.entries.map((entry) {
+                int index = textFields.keys.toList().indexOf(entry.key);
+                return _buildTextField(entry.key, entry.value, index, isNumeric: entry.key == "Amount");
+              }).toList(),
+              SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _isSubmitEnabled ? _showConfirmationDialog : null,
+                style: ButtonStyle(
+                  backgroundColor: MaterialStateProperty.all(
+                    _isSubmitEnabled ? Colors.blue : Colors.grey,
+                  ),
+                ),
+                child: Text("Submit"),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -14,7 +14,7 @@ class _ProfitTillTodayPageState extends State<ProfitTillTodayPage> {
   double costOfGoodsSold = 0.0;
   double netProfit = 0.0;
 
-  // Function to fetch the sales revenue and COGS for the current user
+  // Function to fetch the precomputed profit data for the current user
   Future<void> fetchProfitData() async {
     try {
       final currentUser = FirebaseAuth.instance.currentUser;
@@ -25,50 +25,22 @@ class _ProfitTillTodayPageState extends State<ProfitTillTodayPage> {
 
       final userId = currentUser.uid;
 
-      // Fetch sales revenue (amount_paid from records) for the current user
-      final salesQuerySnapshot = await FirebaseFirestore.instance
-          .collection('records')
-          .where('user_id', isEqualTo: userId) // Filter by current user's ID
+      // Fetch profit summary document instead of all records
+      final profitDoc = await FirebaseFirestore.instance
+          .collection('profit_summary')
+          .doc(userId)
           .get();
 
-      double salesTotal = 0.0;
-      for (var doc in salesQuerySnapshot.docs) {
-        double amountPaid = doc['amount_paid'] ?? 0.0;
-        print("Fetched amount_paid from records: $amountPaid");
-        salesTotal += amountPaid;
+      if (profitDoc.exists) {
+        final data = profitDoc.data();
+        setState(() {
+          salesRevenue = data?['total_sales'] ?? 0.0;
+          costOfGoodsSold = data?['total_expenditures'] ?? 0.0;
+          netProfit = salesRevenue - costOfGoodsSold;
+        });
+      } else {
+        print("No profit summary found for this user.");
       }
-
-      // Fetch cost of goods sold (amount from expenditures) for the current user
-      final expendituresQuerySnapshot = await FirebaseFirestore.instance
-          .collection('expenditures')
-          .where('user_id', isEqualTo: userId) // Filter by current user's ID
-          .get();
-
-      double expendituresTotal = 0.0;
-      for (var doc in expendituresQuerySnapshot.docs) {
-        if (doc.data().containsKey('amount')) {
-          // Check for 'amount' field
-          double amountSpent = doc['amount'] ?? 0.0;
-          print("Fetched amount from expenditures: $amountSpent");
-          expendituresTotal += amountSpent;
-        } else {
-          print("Field 'amount' does not exist in this document");
-        }
-      }
-
-      // Calculate net profit
-      double profit = salesTotal - expendituresTotal;
-
-      // Update the state with the fetched values
-      setState(() {
-        salesRevenue = salesTotal;
-        costOfGoodsSold = expendituresTotal;
-        netProfit = profit;
-      });
-
-      print("Total Sales Revenue: $salesRevenue");
-      print("Total Cost of Goods Sold: $costOfGoodsSold");
-      print("Net Profit: $netProfit");
     } catch (e) {
       print("Error fetching profit data: $e");
     }
@@ -102,7 +74,7 @@ class _ProfitTillTodayPageState extends State<ProfitTillTodayPage> {
             ),
             SizedBox(height: 20),
             Text(
-              '₹${netProfit.toStringAsFixed(2)}', // Replace $ with ₹
+              '₹${netProfit.toStringAsFixed(2)}',
               style: TextStyle(
                 fontSize: 40,
                 fontWeight: FontWeight.bold,
@@ -125,7 +97,7 @@ class _ProfitTillTodayPageState extends State<ProfitTillTodayPage> {
                       ),
                     ),
                     SizedBox(height: 10),
-                    _buildProfitRow('Total Amount', salesRevenue),
+                    _buildProfitRow('Total Sales', salesRevenue),
                     _buildProfitRow('Total Expenditure', costOfGoodsSold),
                     SizedBox(height: 20),
                     Divider(color: Colors.black),
@@ -165,7 +137,7 @@ class _ProfitTillTodayPageState extends State<ProfitTillTodayPage> {
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         Text(
-          '₹${amount.toStringAsFixed(2)}', // Replace $ with ₹
+          '₹${amount.toStringAsFixed(2)}',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,

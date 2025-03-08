@@ -1,11 +1,11 @@
-import 'package:firstly/recent_records_page.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart'; // Import Firebase Auth
+import 'package:firebase_auth/firebase_auth.dart';
 import 'record_options.dart';
 import 'home.dart';
 import 'search.dart';
 import 'settings.dart';
+import 'recent_records_page.dart';
 
 class AddPage extends StatefulWidget {
   const AddPage({super.key});
@@ -15,9 +15,9 @@ class AddPage extends StatefulWidget {
 }
 
 class _AddPageState extends State<AddPage> {
-  List<String> partners = ["No Gain Sharer"]; // Ensure it's always displayed
+  List<String> partners = ["No Gain Sharer"]; // Default partner
   String? _errorMessage;
-  int _selectedIndex = 2; // Initialize with the Add tab as default.
+  int _selectedIndex = 2; // Default Add tab index
 
   @override
   void initState() {
@@ -29,68 +29,77 @@ class _AddPageState extends State<AddPage> {
     final User? user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    QuerySnapshot snapshot = await FirebaseFirestore.instance
+    DocumentSnapshot snapshot = await FirebaseFirestore.instance
         .collection('partners')
-        .where('userId', isEqualTo: user.uid) // Fetch only this user's partners
+        .doc(user.uid)
         .get();
 
-    setState(() {
-      partners = ["No Gain Sharer"]; // Reset list and ensure it's always there
-      for (var doc in snapshot.docs) {
-        String name = doc['name'] as String;
-        if (!partners.contains(name)) {
-          partners.add(name);
-        }
-      }
-    });
+    if (snapshot.exists) {
+      List<dynamic> partnerList = snapshot.get('partners') ?? [];
+      setState(() {
+        partners = ["No Gain Sharer"];
+        partners.addAll(partnerList.cast<String>());
+      });
+    }
   }
 
   void _addPartner() async {
-    final User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+  final User? user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
 
-    final String? partnerName = await showDialog<String>(
-      context: context,
-      builder: (BuildContext context) {
-        TextEditingController controller = TextEditingController();
-        return AlertDialog(
-          title: Text("Enter Partner's Name"),
-          content: TextField(
-            controller: controller,
-            decoration: InputDecoration(hintText: 'Partner name'),
+  final String? partnerName = await showDialog<String>(
+    context: context,
+    builder: (BuildContext context) {
+      TextEditingController controller = TextEditingController();
+      return AlertDialog(
+        title: Text("Enter Partner's Name"),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(hintText: 'Partner name'),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(controller.text);
+            },
+            child: Text('Add'),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(controller.text);
-              },
-              child: Text('Add'),
-            ),
-          ],
-        );
-      },
-    );
+        ],
+      );
+    },
+  );
 
-    if (partnerName != null && partnerName.isNotEmpty) {
-      bool alreadyExists = partners.contains(partnerName);
+  if (partnerName != null && partnerName.isNotEmpty) {
+    bool alreadyExists = partners.contains(partnerName);
 
-      if (alreadyExists) {
-        setState(() {
-          _errorMessage = 'You have already added this partner.';
-        });
-      } else {
-        await FirebaseFirestore.instance.collection('partners').add({
-          'name': partnerName,
-          'userId': user.uid,
-        });
+    if (alreadyExists) {
+      setState(() {
+        _errorMessage = 'You have already added this partner.';
+      });
+    } else {
+      DocumentReference partnerDocRef =
+          FirebaseFirestore.instance.collection('partners').doc(user.uid);
 
-        setState(() {
-          partners.add(partnerName);
-          _errorMessage = null;
+      DocumentSnapshot partnerDocSnapshot = await partnerDocRef.get();
+      if (!partnerDocSnapshot.exists) {
+        await partnerDocRef.set({
+          'u_id': user.uid,
+          'created_at': FieldValue.serverTimestamp(),
+          'partners': []
         });
       }
+
+      await partnerDocRef.update({
+        'partners': FieldValue.arrayUnion([partnerName])
+      });
+
+      setState(() {
+        partners.add(partnerName);
+        _errorMessage = null;
+      });
     }
   }
+}
 
   void _navigateToNextPage(String partnerName) {
     Navigator.push(
@@ -108,31 +117,18 @@ class _AddPageState extends State<AddPage> {
 
     switch (index) {
       case 0:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => HomeScreen()),
-        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => HomeScreen()));
         break;
       case 1:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => SearchScreen()),
-        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen()));
         break;
       case 2:
-        // Stay on Add Page
         break;
       case 3:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => RecentRecordsPage()),
-        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => RecentRecordsPage()));
         break;
       case 4:
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => SettingsPage()),
-        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SettingsPage()));
         break;
     }
   }
@@ -198,26 +194,11 @@ class _AddPageState extends State<AddPage> {
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.black,
         items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home, size: 30),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search, size: 30),
-            label: 'Search',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.add, size: 30),
-            label: 'Add',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.access_time, size: 30),
-            label: 'Recent',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings, size: 30),
-            label: 'Settings',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home, size: 30), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.search, size: 30), label: 'Search'),
+          BottomNavigationBarItem(icon: Icon(Icons.add, size: 30), label: 'Add'),
+          BottomNavigationBarItem(icon: Icon(Icons.access_time, size: 30), label: 'Recent'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings, size: 30), label: 'Settings'),
         ],
       ),
     );
