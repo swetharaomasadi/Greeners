@@ -1,8 +1,8 @@
-import 'package:flutter/material.dart'; 
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import 'home.dart';
-import 'search_date.dart';
 import 'search.dart';
 import 'settings.dart';
 import 'add.dart';
@@ -16,43 +16,144 @@ class RecentRecordsPage extends StatefulWidget {
 
 class _RecentRecordsPageState extends State<RecentRecordsPage> {
   int _selectedIndex = 3; // Recent page index
-  List<QueryDocumentSnapshot>? _records;
-  String? _selectedCollection;
+  List<dynamic> _records = [];
+  List<dynamic> _paginatedRecords = [];
   String? _currentUserId;
+  double _totalEarnings = 0;
+  double _totalExpenditures = 0;
+  Map<String, List<dynamic>>? _allRecordsMap; // Local storage for all records
+  bool _isLoading = false; // For loading data
+  int _recordsPerPage = 10; // Number of records per page
+  int _currentPage = 0; // Current page index
+  final ScrollController _scrollController = ScrollController(); // Controller for detecting scroll events
 
   @override
   void initState() {
     super.initState();
     _getCurrentUser();
-    _fetchRecentRecords('records');
+    _scrollController.addListener(_scrollListener); // Add scroll listener
   }
 
-  void _getCurrentUser() {
+  @override
+  void dispose() {
+    _scrollController.removeListener(_scrollListener); // Remove scroll listener
+    _scrollController.dispose(); // Dispose of the controller
+    super.dispose();
+  }
+
+  void _getCurrentUser() async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       setState(() {
         _currentUserId = user.uid;
+        _fetchAllRecords(); // Fetch all records when the user is identified
       });
     }
   }
 
-  Future<void> _fetchRecentRecords(String collection) async {
+  Future<void> _fetchAllRecords() async {
     if (_currentUserId == null) return;
 
-    Timestamp last24Hours = Timestamp.fromDate(
-      DateTime.now().subtract(const Duration(hours: 24)),
-    );
+    setState(() {
+      _isLoading = true; // Start loading before fetching data
+    });
 
-    QuerySnapshot snapshot = await FirebaseFirestore.instance
-        .collection(collection)
-        .where('timestamp', isGreaterThanOrEqualTo: last24Hours)
-        .where('user_id', isEqualTo: _currentUserId)
-        .orderBy('timestamp', descending: true)
-        .get();
+    FirebaseFirestore firestore = FirebaseFirestore.instance;
+    Map<String, List<dynamic>> allRecordsMap = {};
+
+    Query query = firestore
+        .collection('records')
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _currentUserId!)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: "${_currentUserId!}\uf8ff")
+        .orderBy(FieldPath.documentId, descending: true);
+    QuerySnapshot userDocs = await query.get();
+
+    for (var doc in userDocs.docs) {
+      Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
+      List<dynamic> records = data['r'] ?? [];
+
+      for (var record in records) {
+        String date = record['date'];
+        if (!allRecordsMap.containsKey(date)) {
+          allRecordsMap[date] = [];
+        }
+        allRecordsMap[date]!.add(record);
+      }
+    }
 
     setState(() {
-      _records = snapshot.docs;
-      _selectedCollection = collection;
+      _allRecordsMap = allRecordsMap;
+      _isLoading = false; // Stop loading after fetching data
+      _searchRecords(); // Search records after fetching data
+    });
+  }
+
+  void _searchRecords() {
+    if (_allRecordsMap == null) return;
+
+    String formattedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    List<dynamic> allRecords = _allRecordsMap![formattedDate] ?? [];
+
+    double totalEarnings = 0;
+    double totalExpenditures = 0;
+
+    for (var record in allRecords) {
+      if (record['t'] == 'sale') {
+        totalEarnings += record['tb'] ?? 0;
+      } else if (record['typ'] == 'exp') {
+        totalExpenditures += record['amt'] ?? 0;
+      }
+    }
+
+    setState(() {
+      _records = allRecords;
+      _totalEarnings = totalEarnings;
+      _totalExpenditures = totalExpenditures;
+      _updatePaginatedRecords(); // Update paginated records
+    });
+  }
+
+  void _updatePaginatedRecords() {
+    if (_records.isEmpty) return;
+
+    int startIndex = _currentPage * _recordsPerPage;
+    int endIndex = startIndex + _recordsPerPage;
+
+    setState(() {
+      _paginatedRecords = _records.sublist(
+        startIndex,
+        endIndex > _records.length ? _records.length : endIndex,
+      );
+    });
+  }
+
+  void _scrollListener() {
+    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
+      _loadNextPage(); // Load next page when scrolled to the bottom
+    } else if (_scrollController.position.pixels == _scrollController.position.minScrollExtent) {
+      _loadPreviousPage(); // Load previous page when scrolled to the top
+    }
+  }
+
+  void _loadNextPage() {
+    if (_records.isEmpty) return;
+
+    setState(() {
+      if ((_currentPage + 1) * _recordsPerPage < _records.length) {
+        _currentPage++;
+        _updatePaginatedRecords();
+      }
+    });
+  }
+
+  void _loadPreviousPage() {
+    if (_records.isEmpty) return;
+
+    setState(() {
+      if (_currentPage > 0) {
+        _currentPage--;
+        _updatePaginatedRecords();
+      }
     });
   }
 
@@ -97,6 +198,8 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
 
   @override
   Widget build(BuildContext context) {
+    double profit = _totalEarnings - _totalExpenditures;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -114,18 +217,66 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            buildCollectionToggleButtons(),
             const SizedBox(height: 20),
+
+            // Display Total Earnings, Expenditures, and Profit
+            if (_records.isNotEmpty) ...[
+              Text('Total Earnings: ₹$_totalEarnings', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              Text('Total Expenditures: ₹$_totalExpenditures', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              Text('Profit: ₹$profit', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 20),
+            ],
+
+            // Display Results
             Expanded(
-              child: _records == null
+              child: _isLoading && _records.isEmpty
                   ? const Center(child: CircularProgressIndicator())
-                  : _records!.isEmpty
+                  : _records.isEmpty
                       ? const Center(child: Text('No recent records found'))
                       : ListView.builder(
-                          itemCount: _records!.length,
+                          controller: _scrollController,
+                          itemCount: _paginatedRecords.length,
                           itemBuilder: (context, index) {
-                            var record = _records![index].data() as Map<String, dynamic>;
-                            return buildRecordCard(record);
+                            var record = _paginatedRecords[index];
+
+                            String partnerName = record['partner'] ?? 'No Partner';
+                            String type = record['t'] ?? record['typ'] ?? 'Unknown';
+
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 8),
+                              elevation: 4,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    // Partner Name
+                                    Text(
+                                      "Partner: $partnerName",
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.deepOrange,
+                                      ),
+                                    ),
+                                    const Divider(),
+
+                                    if (type == 'sale') ...[
+                                      // Profit (Sales) Records Section
+                                      Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      Text("Vendor: ${record['v_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16)),
+                                      Text("Total Bill: ₹${record['tb'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      Text("Weight: ${record['w'] ?? '0'} kg", style: const TextStyle(fontSize: 16)),
+                                    ] else if (type == 'exp') ...[
+                                      // Expenditure Records Section
+                                      Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      Text("Description: ${record['desc'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                                      Text("Amount Spent: ₹${record['amt'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
                           },
                         ),
             ),
@@ -133,87 +284,6 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
         ),
       ),
       bottomNavigationBar: buildBottomNavigationBar(),
-    );
-  }
-
-  Widget buildCollectionToggleButtons() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _selectedCollection == 'records'
-                ? Colors.deepOrange
-                : Colors.grey,
-          ),
-          onPressed: () => _fetchRecentRecords('records'),
-          child: const Text('Profit Records'),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _selectedCollection == 'expenditures'
-                ? Colors.deepOrange
-                : Colors.grey,
-          ),
-          onPressed: () => _fetchRecentRecords('expenditures'),
-          child: const Text('Expenditure Records'),
-        ),
-      ],
-    );
-  }
-
-  Widget buildRecordCard(Map<String, dynamic> record) {
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      elevation: 4,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            buildRow(Icons.person, 'Partner', record['partner'] ?? 'No Partner', Colors.deepPurple),
-            const Divider(),
-            if (_selectedCollection == 'records') ...[
-              buildRow(Icons.eco, 'Crop', record['item'], Colors.green),
-              buildRow(Icons.store, 'Vendor', record['vendor'], Colors.blue),
-              buildRow(Icons.attach_money, 'Total Bill', '₹${record['total_bill'] ?? '0'}', Colors.purple),
-              buildRow(Icons.payment, 'Amount Paid', '₹${record['amount_paid'] ?? '0'}', Colors.teal),
-              buildRow(Icons.warning, 'Dues', '₹${record['due_amount'] ?? '0'}', Colors.red),
-            ] else ...[
-              buildRow(Icons.eco, 'Crop', record['crop_name'], Colors.green),
-              buildRow(Icons.description, 'Description', record['description'], Colors.grey),
-              buildRow(Icons.money, 'Amount', '₹${record['amount'] ?? '0'}', Colors.blue),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget buildRow(IconData icon, String label, dynamic value, Color color) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 26),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '$label: ${value ?? 'N/A'}',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: color,
-              ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

@@ -46,19 +46,17 @@ class _AuthCheckState extends State<AuthCheck> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(), // Listen for auth state changes
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
-        // While waiting for auth state, show loading spinner
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
+          return Scaffold(
+            body: Center(child: CircularProgressIndicator()), // Ensures safe UI rendering
+          );
         }
-
-        // If the user is authenticated, go to HomeScreen
         if (snapshot.hasData) {
           return HomeScreen();
         } else {
-          // If the user is not authenticated, go to SignUp or Login page
-          return SignUpPage(); // Show SignUpPage by default
+          return SignUpPage();
         }
       },
     );

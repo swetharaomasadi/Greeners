@@ -193,22 +193,8 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
         DocumentSnapshot recordSnapshot = await recordDocRef.get();
         Map<String, dynamic>? recordDataMap = recordSnapshot.data() as Map<String, dynamic>?;
         List<dynamic> records = List.from(recordDataMap?['r'] ?? []);
-        bool recordUpdated = false;
-        for (var record in records) {
-          if (record is Map<String, dynamic> &&
-              record['c_id'] == cropName &&
-              record['partner'] == widget.partner &&
-              record['desc'] == description &&
-              record['date'] == currentDate) {
-            record['amt'] = FieldValue.increment(amountSpent);
-            recordUpdated = true;
-            break;
-          }
-        }
-
-        if (!recordUpdated) {
-          records.add(recordData);
-        }
+        
+          records.add(recordData);        
 
         batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
 

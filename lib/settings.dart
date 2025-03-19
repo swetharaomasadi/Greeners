@@ -334,7 +334,7 @@ Future<void> _deleteUserAccount(User user) async {
   void _viewRecords() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => DeleteRecords()),
+      MaterialPageRoute(builder: (context) => DeleteRecordsPage()),
     );
   }
 
@@ -369,7 +369,7 @@ Future<void> _deleteUserAccount(User user) async {
             _buildSettingOption('Change Password', Icons.lock, _changePassword),
             _buildSettingOption(
                 'Change Phone Number', Icons.phone, _changePhoneNumber),
-            _buildSettingOption('Delete Records', Icons.library_books,
+            _buildSettingOption('Delete/ Edit Record', Icons.library_books,
                 _viewRecords), // Added View Records
              // Added View Records
             // Added View Records

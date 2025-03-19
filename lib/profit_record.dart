@@ -104,23 +104,9 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
       DocumentSnapshot recordSnapshot = await recordDocRef.get();
       Map<String, dynamic>? recordDataMap = recordSnapshot.data() as Map<String, dynamic>?; 
       List<dynamic> records = List.from(recordDataMap?['r'] ?? []);
-      bool recordUpdated = false;
-      for (var record in records) {
-        if (record is Map<String, dynamic> &&
-            record['v_id'] == _vendorController.text &&
-            record['c_id'] == _itemController.text &&
-            record['date'] == currentDate) {
-          record['w'] += weight;
-          record['tb'] += _totalBill;
-          recordUpdated = true;
-          break;
-        }
-      }
-
-      if (!recordUpdated) {
+            
         records.add(recordData);
-      }
-
+    
       batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
 
       // Update profit data and today_sales
