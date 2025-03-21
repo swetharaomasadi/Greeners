@@ -137,193 +137,148 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
   }
 
   Future<void> _updateProfits(String userId, WriteBatch batch) async {
-    DocumentReference? profitDocRef = await _getFirstDoc('partners', userId);
-    bool profitUpdated = false;
-    DateTime today = DateTime.now();
-    String todayStr = "${today.year}-${today.month}-${today.day}";
+  QuerySnapshot existingDocs = await _firestore.collection('partners')
+      .where('u_id', isEqualTo: userId)
+      .orderBy('created_at', descending: false)
+      .get();
 
-    while (profitDocRef != null) {
-      DocumentSnapshot profitSnapshot = await profitDocRef.get();
-      Map<String, dynamic>? data = profitSnapshot.data() as Map<String, dynamic>? ?? {};
-      Map<String, dynamic> profits = data['profits'] ?? {};
-      Map<String, dynamic> todaySales = data['today_sales'] ?? {};
+  bool profitUpdated = false;
+  for (var doc in existingDocs.docs) {
+    DocumentReference profitDocRef = doc.reference;
+    DocumentSnapshot profitSnapshot = await profitDocRef.get();
+    Map<String, dynamic>? data = profitSnapshot.data() as Map<String, dynamic>? ?? {};
+    Map<String, dynamic> profits = data['profits'] ?? {};
+    // Check if partner exists in profits
+    Map<String, dynamic> partnerProfits = (profits[widget.partner] as Map<String, dynamic>?) ?? {'crops': {}};
+    Map<String, dynamic> cropProfits = (partnerProfits['crops'][_itemController.text] as Map<String, dynamic>?) ?? {};
 
-      // Check if partner exists in profits
-      Map<String, dynamic> partnerProfits = (profits[widget.partner] as Map<String, dynamic>?) ?? {'crops': {}};
-      Map<String, dynamic> cropProfits = (partnerProfits['crops'][_itemController.text] as Map<String, dynamic>?) ?? {};
+    cropProfits['tear'] = (cropProfits['tear'] ?? 0) + _totalBill;
+    cropProfits['texp'] = (cropProfits['texp'] ?? 0) + 0;
+    cropProfits['tp'] = (cropProfits['tp'] ?? 0) + _totalBill;
+    cropProfits['tw'] = (cropProfits['tw'] ?? 0) + (double.tryParse(_kgsController.text) ?? 0.0);
 
-      cropProfits['tear'] = (cropProfits['tear'] ?? 0) + _totalBill;
-      cropProfits['texp'] = (cropProfits['texp'] ?? 0) + 0;
-      cropProfits['tp'] = (cropProfits['tp'] ?? 0) + _totalBill;
-      cropProfits['tw'] = (cropProfits['tw'] ?? 0) + (double.tryParse(_kgsController.text) ?? 0.0);
+    partnerProfits['crops'][_itemController.text] = cropProfits;
+    partnerProfits['tear'] = (partnerProfits['tear'] ?? 0) + _totalBill;
+    partnerProfits['texp'] = (partnerProfits['texp'] ?? 0) + 0;
+    partnerProfits['tp'] = (partnerProfits['tp'] ?? 0) + _totalBill;
+    profits[widget.partner] = partnerProfits;
 
-      partnerProfits['crops'][_itemController.text] = cropProfits;
-      partnerProfits['tear'] = (partnerProfits['tear'] ?? 0) + _totalBill;
-      partnerProfits['texp'] = (partnerProfits['texp'] ?? 0) + 0;
-      partnerProfits['tp'] = (partnerProfits['tp'] ?? 0) + _totalBill;
-      profits[widget.partner] = partnerProfits;
-
-      // Update today_sales with date check
-      if (todaySales['date'] != todayStr) {
-        todaySales = {'date': todayStr}; // Reset todaySales for new date
-      }
-
-      Map<String, dynamic> salesData = todaySales[_itemController.text] ?? {};
-      salesData['weight'] = (salesData['weight'] ?? 0.0) + (double.tryParse(_kgsController.text) ?? 0.0);
-      salesData['total_bill'] = (salesData['total_bill'] ?? 0.0) + _totalBill;
-      todaySales[_itemController.text] = salesData;
-
-      batch.set(profitDocRef, {
-        'profits': profits,
-        'today_sales': todaySales
-      }, SetOptions(merge: true));
-      profitUpdated = true;
-      break;
-    }
-
-    if (!profitUpdated) {
-      // Create a new document if needed
-      DocumentReference newProfitDocRef = await _getOrCreateDoc('partners', userId, 'profits');
-      batch.set(newProfitDocRef, {
-        'profits': {
-          widget.partner: {
-            'crops': {
-              _itemController.text: {
-                'tear': _totalBill,
-                'texp': 0,
-                'tp': _totalBill,
-                'tw': double.tryParse(_kgsController.text) ?? 0.0
-              }
-            },
-            'tear': _totalBill,
-            'texp': 0,
-            'tp': _totalBill
-          }
-        },
-        'today_sales': {
-          'date': todayStr,
-          _itemController.text: {
-            'weight': double.tryParse(_kgsController.text) ?? 0.0,
-            'total_bill': _totalBill
-          }
-        }
-      }, SetOptions(merge: true));
-    }
+    batch.set(profitDocRef, {
+      'profits': profits,
+    }, SetOptions(merge: true));
+    profitUpdated = true;
+    break;
   }
+
+  if (!profitUpdated) {
+    // Create a new document if needed
+    DocumentReference newProfitDocRef = await _getOrCreateDoc('partners', userId, 'profits');
+    batch.set(newProfitDocRef, {
+      'profits': {
+        widget.partner: {
+          'crops': {
+            _itemController.text: {
+              'tear': _totalBill,
+              'texp': 0,
+              'tp': _totalBill,
+              'tw': double.tryParse(_kgsController.text) ?? 0.0
+            }
+          },
+          'tear': _totalBill,
+          'texp': 0,
+          'tp': _totalBill
+        }
+      },
+    }, SetOptions(merge: true));
+  }
+}
 
   Future<void> _updateDues(String userId, WriteBatch batch, double amountPaid, double weight, double totalDue, String currentDate) async {
-    bool dueUpdated = false;
-    DocumentReference? dueDocRef = await _getFirstDoc('dues', userId);
-    while (dueDocRef != null) {
-      DocumentSnapshot dueSnapshot = await dueDocRef.get();
-      Map<String, dynamic>? dueDataMap = dueSnapshot.data() as Map<String, dynamic>?;
-      List<dynamic> dues = List.from(dueDataMap?['d'] ?? []);
-      for (var due in dues) {
-        if (due is Map<String, dynamic> &&
-            due['vendor_id'] == _vendorController.text &&
-            due['crop_id'] == _itemController.text) {
-          due['total_bill'] += _totalBill;
-          due['amount_paid'] += amountPaid;
-          due['total_due'] += totalDue;
-          due['weight'] += weight;
-          dueUpdated = true;
-          break;
-        }
-      }
+  bool dueUpdated = false;
+  
+  QuerySnapshot existingDocs = await _firestore.collection('dues')
+      .where('u_id', isEqualTo: userId)
+      .orderBy('created_at', descending: false)
+      .get();
 
-      if (dueUpdated) {
-        batch.set(dueDocRef, {'d': dues}, SetOptions(merge: true));
+  for (var doc in existingDocs.docs) {
+    DocumentReference dueDocRef = doc.reference;
+    DocumentSnapshot dueSnapshot = await dueDocRef.get();
+    Map<String, dynamic>? dueDataMap = dueSnapshot.data() as Map<String, dynamic>?;
+    List<dynamic> dues = List.from(dueDataMap?['d'] ?? []);
+
+    for (var due in dues) {
+      if (due is Map<String, dynamic> &&
+          due['vendor_id'] == _vendorController.text &&
+          due['crop_id'] == _itemController.text) {
+        due['total_bill'] += _totalBill;
+        due['amount_paid'] += amountPaid;
+        due['total_due'] += totalDue;
+        due['weight'] += weight;
+        dueUpdated = true;
         break;
       }
-
-      dueDocRef = await _getNextDoc(dueDocRef);
     }
 
-    if (!dueUpdated) {
-      DocumentReference newDueDocRef = await _getOrCreateDoc('dues', userId, 'd');
-      DocumentSnapshot dueSnapshot = await newDueDocRef.get();
-      Map<String, dynamic>? dueDataMap = dueSnapshot.data() as Map<String, dynamic>?;
-      List<dynamic> updatedDues = List.from(dueDataMap?['d'] ?? []);
-
-      updatedDues.add({
-        'vendor_id': _vendorController.text,
-        'crop_id': _itemController.text,
-        'date': currentDate,
-        'total_bill': _totalBill,
-        'amount_paid': amountPaid,
-        'total_due': totalDue,
-        'weight': weight,
-      });
-
-      batch.set(newDueDocRef, {'d': updatedDues}, SetOptions(merge: true));
+    if (dueUpdated) {
+      batch.set(dueDocRef, {'d': dues}, SetOptions(merge: true));
+      break;
     }
   }
+
+  if (!dueUpdated) {
+    DocumentReference newDueDocRef = await _getOrCreateDoc('dues', userId, 'd');
+    DocumentSnapshot dueSnapshot = await newDueDocRef.get();
+    Map<String, dynamic>? dueDataMap = dueSnapshot.data() as Map<String, dynamic>?;
+    List<dynamic> updatedDues = List.from(dueDataMap?['d'] ?? []);
+
+    updatedDues.add({
+      'vendor_id': _vendorController.text,
+      'crop_id': _itemController.text,
+      'date': currentDate,
+      'total_bill': _totalBill,
+      'amount_paid': amountPaid,
+      'total_due': totalDue,
+      'weight': weight,
+    });
+
+    batch.set(newDueDocRef, {'d': updatedDues}, SetOptions(merge: true));
+  }
+}
 
   Future<DocumentReference> _getOrCreateDoc(String collection, String userId, String field) async {
-    try {
-      QuerySnapshot existingDocs = await _firestore.collection(collection)
-          .where('u_id', isEqualTo: userId)
-          .orderBy('created_at', descending: true)
-          .limit(1)
-          .get();
-
-      if (existingDocs.docs.isNotEmpty) {
-        DocumentReference existingDocRef = existingDocs.docs.first.reference;
-        DocumentSnapshot existingDocSnapshot = await existingDocRef.get();
-
-        if (existingDocSnapshot.exists) {
-          int docSize = existingDocSnapshot.data()?.toString().length ?? 0;
-          if (docSize < 0.8 * 1024) {
-            return existingDocRef;
-          } else {
-            String newDocId = '${userId}_${existingDocs.docs.length + 1}';
-            await existingDocRef.update({'next_doc_id': newDocId});
-            DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
-            await newDocRef.set({
-              'created_at': FieldValue.serverTimestamp(),
-              'u_id': userId,
-              field: []
-            }, SetOptions(merge: true));
-            return newDocRef;
-          }
-        }
-      }
-
-      String newDocId = existingDocs.docs.isEmpty ? userId : '${userId}_${existingDocs.docs.length + 1}';
-      DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
-      await newDocRef.set({
-        'created_at': FieldValue.serverTimestamp(),
-        'u_id': userId,
-        field: []
-      }, SetOptions(merge: true));
-      return newDocRef;
-    } catch (e) {
-      print('Error getting or creating document: $e');
-      rethrow;
-    }
-  }
-
-  Future<DocumentReference?> _getFirstDoc(String collection, String userId) async {
-    QuerySnapshot existingDocs = await _firestore.collection(collection)
-        .where('u_id', isEqualTo: userId)
-        .orderBy('created_at', descending: true)
-        .limit(1)
+  try {
+    QuerySnapshot userDocs = await FirebaseFirestore.instance
+        .collection(collection)
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: userId)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: "${userId}\uf8ff")
+        .orderBy(FieldPath.documentId, descending: false)
         .get();
 
-    if (existingDocs.docs.isNotEmpty) {
-      return existingDocs.docs.first.reference;
+    for (var doc in userDocs.docs) {
+      DocumentSnapshot existingDocSnapshot = await doc.reference.get();
+      if (existingDocSnapshot.exists) {
+        int docSize = existingDocSnapshot.data()?.toString().length ?? 0;
+        if (docSize < 0.8 * 1024) {
+          return doc.reference;
+        }
+      }
     }
-    return null;
-  }
 
-  Future<DocumentReference?> _getNextDoc(DocumentReference currentDocRef) async {
-    DocumentSnapshot currentDoc = await currentDocRef.get();
-    String? nextDocId = (currentDoc.data() as Map<String, dynamic>?)?['next_doc_id'];
-    if (nextDocId != null) {
-      return _firestore.collection(currentDocRef.parent.id).doc(nextDocId);
-    }
-    return null;
+    // Create a new document if no suitable document found
+    String newDocId = userDocs.docs.isEmpty ? userId : '${userId}_${userDocs.docs.length + 1}';
+    DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
+    await newDocRef.set({
+      'created_at': FieldValue.serverTimestamp(),
+      'u_id': userId,
+      field: []
+    }, SetOptions(merge: true));
+    return newDocRef;
+  } catch (e) {
+    print('Error getting or creating document: $e');
+    rethrow;
   }
+}
 
   void _clearForm() {
     for (var controller in _controllers) {
@@ -474,31 +429,34 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
   }
 
   void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Error"),
-          content: Text(message),
-          actions: <Widget>[
-            TextButton(
-              child: Text("Cancel"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            ElevatedButton(
-              child: Text("Retry"),
-              onPressed: () {
-                Navigator.of(context).pop();
-                _submitRecord();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text("Error"),
+        content: Text(message),
+        actions: <Widget>[
+          TextButton(
+            child: Text("Cancel"),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+          ElevatedButton(
+            child: Text("Retry"),
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() {
+                _isSubmitEnabled = false; // Disable the submit button
+              });
+              _submitRecord();
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
 
   Widget _buildTextField(String label, TextEditingController controller, int index, {bool isNumeric = false}) {
     return Padding(

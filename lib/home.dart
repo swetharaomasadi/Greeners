@@ -9,7 +9,7 @@ import 'recent_records_page.dart'; // Import the recent records page
 import 'firebase_services.dart'; // Import Firebase services for logout
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore to fetch user details
-import 'voice_assistant_provider.dart';
+import 'crop_completed.dart';
 void main() {
   runApp(MyApp());
 }
@@ -196,7 +196,7 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        SizedBox(height: 10),
+                        SizedBox(height: 25),
                         ElevatedButton(
                           onPressed: () {
                             // Navigate to the Profit Till Today page
@@ -227,6 +227,39 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ),
                         ),
+                        SizedBox(height: 25),
+                        ElevatedButton(
+                          onPressed: () {
+                            // Navigate to the complete crop
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => CompleteCrop(),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                const Color.fromARGB(255, 235, 239, 244),
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: BorderSide(
+                                  color:
+                                      const Color.fromARGB(255, 59, 151, 191)),
+                            ),
+                          ),
+                          child: Text(
+                            'Crop Completed',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: const Color.fromARGB(251, 179, 112, 10),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 10),
+                        
                       ],
                     ),
                   ),

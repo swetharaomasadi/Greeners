@@ -222,113 +222,95 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
   }
 
   Future<void> _updateProfits(String userId, WriteBatch batch, String cropName, double amountSpent) async {
-    DocumentReference? profitDocRef = await _getFirstDoc('partners', userId);
-    bool profitUpdated = false;
+  QuerySnapshot existingDocs = await _firestore.collection('partners')
+      .where('u_id', isEqualTo: userId)
+      .orderBy('created_at', descending: false)
+      .get();
 
-    while (profitDocRef != null) {
-      DocumentSnapshot profitSnapshot = await profitDocRef.get();
-      Map<String, dynamic>? data = profitSnapshot.data() as Map<String, dynamic>? ?? {};
-      Map<String, dynamic> profits = data['profits'] ?? {};
+  bool profitUpdated = false;
 
-      // Check if partner exists in profits
-      Map<String, dynamic> partnerProfits = (profits[widget.partner] as Map<String, dynamic>?) ?? {'crops': {}};
-      Map<String, dynamic> cropProfits = (partnerProfits['crops'][cropName] as Map<String, dynamic>?) ?? {};
+  for (var doc in existingDocs.docs) {
+    DocumentReference profitDocRef = doc.reference;
+    DocumentSnapshot profitSnapshot = await profitDocRef.get();
+    Map<String, dynamic>? data = profitSnapshot.data() as Map<String, dynamic>? ?? {};
+    Map<String, dynamic> profits = data['profits'] ?? {};
 
-      cropProfits['texp'] = FieldValue.increment(amountSpent);
-      cropProfits['tp'] = FieldValue.increment(-amountSpent);
-      cropProfits['tear'] = cropProfits['tear'] ?? 0; // Ensure tear is 0 if not present
-      cropProfits['tw'] = cropProfits['tw'] ?? 0; // Ensure tw is 0 if not present
-      partnerProfits['tear'] = partnerProfits['tear'] ?? 0;
-      partnerProfits['texp'] = FieldValue.increment(amountSpent);
-      partnerProfits['tp'] = FieldValue.increment(-amountSpent);
-      partnerProfits['crops'][cropName] = cropProfits;
-      profits[widget.partner] = partnerProfits;
+    // Check if partner exists in profits
+    Map<String, dynamic> partnerProfits = (profits[widget.partner] as Map<String, dynamic>?) ?? {'crops': {}};
+    Map<String, dynamic> cropProfits = (partnerProfits['crops'][cropName] as Map<String, dynamic>?) ?? {};
 
-      batch.set(profitDocRef, {'profits': profits}, SetOptions(merge: true));
-      profitUpdated = true;
-      break;
-    }
+    cropProfits['texp'] = FieldValue.increment(amountSpent);
+    cropProfits['tp'] = FieldValue.increment(-amountSpent);
+    cropProfits['tear'] = cropProfits['tear'] ?? 0; // Ensure tear is 0 if not present
+    cropProfits['tw'] = cropProfits['tw'] ?? 0; // Ensure tw is 0 if not present
+    partnerProfits['tear'] = partnerProfits['tear'] ?? 0;
+    partnerProfits['texp'] = FieldValue.increment(amountSpent);
+    partnerProfits['tp'] = FieldValue.increment(-amountSpent);
+    partnerProfits['crops'][cropName] = cropProfits;
+    profits[widget.partner] = partnerProfits;
 
-    if (!profitUpdated) {
-      // Create a new document if needed
-      DocumentReference newProfitDocRef = await _getOrCreateDoc('partners', userId, 'profits');
-      batch.set(newProfitDocRef, {
-        'profits': {
-          widget.partner: {
-            'crops': {
-              cropName: {
-                'texp': FieldValue.increment(amountSpent),
-                'tp': FieldValue.increment(-amountSpent),
-                'tear': 0,
-                'tw': 0,
-              }
-            },
-            'texp': FieldValue.increment(amountSpent),
-            'tp': FieldValue.increment(-amountSpent),
-            'tear': 0,
-          }
-        }
-      }, SetOptions(merge: true));
-    }
+    batch.set(profitDocRef, {'profits': profits}, SetOptions(merge: true));
+    profitUpdated = true;
+    break;
   }
 
-  Future<DocumentReference> _getOrCreateDoc(String collection, String userId, String field) async {
-    try {
-      QuerySnapshot existingDocs = await _firestore.collection(collection)
-          .where('u_id', isEqualTo: userId)
-          .orderBy('created_at', descending: true)
-          .limit(1)
-          .get();
-
-      if (existingDocs.docs.isNotEmpty) {
-        DocumentReference existingDocRef = existingDocs.docs.first.reference;
-        DocumentSnapshot existingDocSnapshot = await existingDocRef.get();
-
-        if (existingDocSnapshot.exists) {
-          int docSize = existingDocSnapshot.data()?.toString().length ?? 0;
-          if (docSize < 0.8 * 1024) {
-            return existingDocRef;
-          } else {
-            String newDocId = '${userId}_${existingDocs.docs.length + 1}';
-            await existingDocRef.update({'next_doc_id': newDocId});
-            DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
-            await newDocRef.set({
-              'created_at': FieldValue.serverTimestamp(),
-              'u_id': userId,
-              field: []
-            }, SetOptions(merge: true));
-            return newDocRef;
-          }
+  if (!profitUpdated) {
+    // Create a new document if needed
+    DocumentReference newProfitDocRef = await _getOrCreateDoc('partners', userId, 'profits');
+    batch.set(newProfitDocRef, {
+      'profits': {
+        widget.partner: {
+          'crops': {
+            cropName: {
+              'texp': FieldValue.increment(amountSpent),
+              'tp': FieldValue.increment(-amountSpent),
+              'tear': 0,
+              'tw': 0,
+            }
+          },
+          'texp': FieldValue.increment(amountSpent),
+          'tp': FieldValue.increment(-amountSpent),
+          'tear': 0,
         }
       }
-
-      String newDocId = existingDocs.docs.isEmpty ? userId : '${userId}_${existingDocs.docs.length + 1}';
-      DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
-      await newDocRef.set({
-        'created_at': FieldValue.serverTimestamp(),
-        'u_id': userId,
-        field: []
-      }, SetOptions(merge: true));
-      return newDocRef;
-    } catch (e) {
-      print('Error getting or creating document: $e');
-      rethrow;
-    }
+    }, SetOptions(merge: true));
   }
+}
 
-  Future<DocumentReference?> _getFirstDoc(String collection, String userId) async {
-    QuerySnapshot existingDocs = await _firestore.collection(collection)
-        .where('u_id', isEqualTo: userId)
-        .orderBy('created_at', descending: true)
-        .limit(1)
+  Future<DocumentReference> _getOrCreateDoc(String collection, String userId, String field) async {
+  try {
+    QuerySnapshot userDocs = await FirebaseFirestore.instance
+        .collection(collection)
+        .where(FieldPath.documentId, isGreaterThanOrEqualTo: userId)
+        .where(FieldPath.documentId, isLessThanOrEqualTo: "${userId}\uf8ff")
+        .orderBy(FieldPath.documentId, descending: false)
         .get();
 
-    if (existingDocs.docs.isNotEmpty) {
-      return existingDocs.docs.first.reference;
+    for (var doc in userDocs.docs) {
+      DocumentSnapshot existingDocSnapshot = await doc.reference.get();
+      if (existingDocSnapshot.exists) {
+        int docSize = existingDocSnapshot.data()?.toString().length ?? 0;
+        if (docSize < 0.8 * 1024) {
+          return doc.reference;
+        }
+      }
     }
-    return null;
-  }
 
+    // Create a new document if no suitable document found
+    String newDocId = userDocs.docs.isEmpty ? userId : '${userId}_${userDocs.docs.length + 1}';
+    DocumentReference newDocRef = _firestore.collection(collection).doc(newDocId);
+    await newDocRef.set({
+      'created_at': FieldValue.serverTimestamp(),
+      'u_id': userId,
+      field: []
+    }, SetOptions(merge: true));
+    return newDocRef;
+  } catch (e) {
+    print('Error getting or creating document: $e');
+    rethrow;
+  }
+}
+  
   void _clearForm() {
     for (var controller in _controllers) {
       controller.clear();
@@ -339,31 +321,35 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
   }
 
   void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Error"),
-          content: Text(message),
-          actions: <Widget>[
-            TextButton(
-              child: Text("Cancel"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            ElevatedButton(
-              child: Text("Retry"),
-              onPressed: () {
-                Navigator.of(context).pop();
-                _submitExpenditure();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text("Error"),
+        content: Text(message),
+        actions: <Widget>[
+          TextButton(
+            child: Text("Cancel"),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+          ElevatedButton(
+            child: Text("Retry"),
+            onPressed: () {
+              Navigator.of(context).pop();
+              setState(() {
+                _isSubmitEnabled = false; // Disable the submit button
+              });
+              _submitExpenditure();
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
+
 
   void _showConfirmationDialog() {
     showDialog(
