@@ -153,12 +153,12 @@ class _AddPageState extends State<AddPage> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10.0),
               child: Text(
-                "Add Name of Gain Sharer if they exist. Click on the name if already added to add data in sharing profit",
+                "Add your partner by clicking the '+' sign. If already added, click the partner's name to enter data for shared profit.",
                 style: TextStyle(fontSize: 20, color: Color.fromARGB(255, 128, 151, 219)),
                 textAlign: TextAlign.center,
               ),
             ),
-            SizedBox(height: 15),
+            SizedBox(height: 25),
             if (_errorMessage != null)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 10.0),
@@ -179,7 +179,7 @@ class _AddPageState extends State<AddPage> {
                 );
               }).toList(),
             ),
-            SizedBox(height: 20),
+            SizedBox(height: 25),
             FloatingActionButton(
               onPressed: _addPartner,
               child: Icon(Icons.add),
@@ -194,11 +194,11 @@ class _AddPageState extends State<AddPage> {
         selectedItemColor: Colors.blue,
         unselectedItemColor: Colors.black,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home, size: 30), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.search, size: 30), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.add, size: 30), label: 'Add'),
-          BottomNavigationBarItem(icon: Icon(Icons.access_time, size: 30), label: 'Recent'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings, size: 30), label: 'Settings'),
+          BottomNavigationBarItem(icon: Icon(Icons.home, size: 40), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.search, size: 40), label: 'Search'),
+          BottomNavigationBarItem(icon: Icon(Icons.add, size: 40), label: 'Add'),
+          BottomNavigationBarItem(icon: Icon(Icons.access_time, size: 40), label: 'Recent'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings, size: 40), label: 'Settings'),
         ],
       ),
     );

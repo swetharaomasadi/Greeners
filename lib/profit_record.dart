@@ -95,6 +95,7 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
       'tb': _totalBill,
       'partner': widget.partner,
       'date': currentDate,
+      'a_p':amountPaid
     };
 
     WriteBatch batch = _firestore.batch();
@@ -109,7 +110,7 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
     
       batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
 
-      // Update profit data and today_sales
+      // Update profit data
       await _updateProfits(user.uid, batch);
 
       // Update dues if totalDue is greater than 0
@@ -120,14 +121,18 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
       await batch.commit();
 
       _clearForm();
-      setState(() {
-        _isDataSubmitted = true;
-      });
+      if (mounted) {
+        setState(() {
+          _isDataSubmitted = true;
+        });
+      }
 
       Future.delayed(const Duration(seconds: 3), () {
-        setState(() {
-          _isDataSubmitted = false;
-        });
+        if (mounted) {
+          setState(() {
+            _isDataSubmitted = false;
+          });
+        }
       });
     } catch (e, stackTrace) {
       _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
@@ -335,9 +340,10 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
           });
         }
       },
-      listenMode: stt.ListenMode.dictation,
-      partialResults: true,
-      pauseFor: Duration(seconds: 2),
+      listenOptions: stt.SpeechListenOptions(
+    listenMode: stt.ListenMode.dictation,
+    partialResults: true),
+    pauseFor: Duration(seconds: 2),
       onSoundLevelChange: (level) {
         if (level < 0.1) {
           _startTimeout();
@@ -549,7 +555,7 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
               ElevatedButton(
                 onPressed: _isSubmitEnabled ? _showConfirmationDialog : null,
                 style: ButtonStyle(
-                  backgroundColor: MaterialStateProperty.all(
+                  backgroundColor: WidgetStateProperty.all(
                     _isSubmitEnabled ? Colors.blue : Colors.grey,
                   ),
                 ),

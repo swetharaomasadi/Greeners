@@ -2,8 +2,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'Delete_records.dart';
-
+import 'delete_record.dart';
+import 'old_profits.dart';
 import 'ProfilePage.dart';
 import 'Login.dart';
 import 'home.dart';
@@ -369,10 +369,18 @@ Future<void> _deleteUserAccount(User user) async {
             _buildSettingOption('Change Password', Icons.lock, _changePassword),
             _buildSettingOption(
                 'Change Phone Number', Icons.phone, _changePhoneNumber),
-            _buildSettingOption('Delete/ Edit Record', Icons.library_books,
+            _buildSettingOption('Delete Record', Icons.library_books,
                 _viewRecords), // Added View Records
              // Added View Records
             // Added View Records
+            _buildSettingOption(
+  'Old Profits', 
+  Icons.description, 
+  () => Navigator.push(
+    context, 
+    MaterialPageRoute(builder: (context) => Olddata()),
+  ),
+),
             _buildSettingOption(
                 'Delete Account', Icons.delete_forever, _deleteAccount),
           ],
