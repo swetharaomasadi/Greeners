@@ -10,6 +10,7 @@ import 'firebase_services.dart'; // Import Firebase services for logout
 import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth
 import 'package:cloud_firestore/cloud_firestore.dart'; // Import Firestore to fetch user details
 import 'crop_completed.dart';
+
 void main() {
   runApp(MyApp());
 }
@@ -88,7 +89,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             Image.asset(
               'assets/logo.png', // Add your logo here
-              height: 80,
+              height: 50,
             ),
           ],
         ),
@@ -132,7 +133,7 @@ class HomeScreen extends StatelessWidget {
 
               return Column(
                 children: [
-                  SizedBox(height: 40), // Move greeting to top with some space
+                  SizedBox(height: 30), // Move greeting to top with some space
                   Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.start,
@@ -144,7 +145,7 @@ class HomeScreen extends StatelessWidget {
                           child: Text(
                             getGreeting(), // Dynamic greeting
                             style: TextStyle(
-                              fontSize: 25,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: Colors.white, // White text color
                             ),
@@ -156,7 +157,7 @@ class HomeScreen extends StatelessWidget {
                         Text(
                           username, // Display fetched username
                           style: TextStyle(
-                            fontSize: 25,
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
                             color: const Color.fromARGB(136, 113, 4, 4),
                           ),
@@ -165,7 +166,7 @@ class HomeScreen extends StatelessWidget {
                             height: 10), // Small spacing between name and icon
                         Icon(Icons.waving_hand, color: Colors.orange, size: 40),
                        
-                        SizedBox(height: 25),
+                        SizedBox(height: 10),
                         ElevatedButton(
                           onPressed: () {
                             // Navigate to the Edit Dues page
@@ -190,13 +191,13 @@ class HomeScreen extends StatelessWidget {
                           child: Text(
                             'Edit Dues',
                             style: TextStyle(
-                              fontSize: 22,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: const Color.fromARGB(251, 179, 112, 10),
                             ),
                           ),
                         ),
-                        SizedBox(height: 25),
+                        SizedBox(height: 10),
                         ElevatedButton(
                           onPressed: () {
                             // Navigate to the Profit Till Today page
@@ -221,13 +222,13 @@ class HomeScreen extends StatelessWidget {
                           child: Text(
                             'Profit Till Today',
                             style: TextStyle(
-                              fontSize: 22,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: const Color.fromARGB(250, 13, 3, 97),
                             ),
                           ),
                         ),
-                        SizedBox(height: 25),
+                        SizedBox(height: 10),
                         ElevatedButton(
                           onPressed: () {
                             // Navigate to the complete crop
@@ -252,7 +253,7 @@ class HomeScreen extends StatelessWidget {
                           child: Text(
                             'Crop Completed',
                             style: TextStyle(
-                              fontSize: 22,
+                              fontSize: 20,
                               fontWeight: FontWeight.bold,
                               color: const Color.fromARGB(251, 179, 112, 10),
                             ),
@@ -275,7 +276,7 @@ class HomeScreen extends StatelessWidget {
           BottomNavigationBarItem(
             icon: GestureDetector(
               onTap: () {}, // Home action here
-              child: Icon(Icons.home, size: 40, color: Colors.blue),
+              child: Icon(Icons.home, size: 30, color: Colors.blue),
             ),
             label: 'Home',
           ),
@@ -290,7 +291,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 );
               },
-              child: Icon(Icons.search, size: 40, color: Colors.black),
+              child: Icon(Icons.search, size: 30, color: Colors.black),
             ),
             label: 'Search',
           ),
@@ -305,7 +306,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 );
               },
-              child: Icon(Icons.add, size: 40, color: Colors.black),
+              child: Icon(Icons.add, size: 30, color: Colors.black),
             ),
             label: 'Add',
           ),
@@ -320,7 +321,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 );
               },
-              child: Icon(Icons.history, size: 40, color: Colors.black),
+              child: Icon(Icons.history, size: 30, color: Colors.black),
             ),
             label: 'Recent',
           ),
@@ -334,7 +335,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 );
               }, // Settings action here
-              child: Icon(Icons.settings, size: 40, color: Colors.black),
+              child: Icon(Icons.settings, size: 30, color: Colors.black),
             ),
             label: 'Settings',
           ),

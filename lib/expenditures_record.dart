@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+
 
 class ExpendituresRecord extends StatefulWidget {
   final String partner;
@@ -15,6 +17,8 @@ class ExpendituresRecord extends StatefulWidget {
 }
 
 class _ExpendituresRecordState extends State<ExpendituresRecord> {
+  final FlutterTts flutterTts = FlutterTts();
+
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _cropController = TextEditingController();
@@ -80,6 +84,7 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
         setState(() {
           _isListening = false;
           _activeFieldIndex = null;
+          _stopListening();
         });
       }
     },
@@ -132,19 +137,6 @@ void _cancelTimeout() {
   _timeoutTimer?.cancel();
 }
 
-void _stopListening() async {
-  if (_isListening) {
-    await _speech.stop();
-    if (mounted) {
-      setState(() {
-        _isListening = false;
-        _activeFieldIndex = null;
-        _assistantMessage = "Tap the mic to start voice input.";
-      });
-    }
-  }
-}
-
 TextEditingController _getController(int fieldIndex) {
   switch (fieldIndex) {
     case 0:
@@ -163,63 +155,73 @@ double _extractNumber(String input) {
   return double.tryParse(number ?? '0') ?? 0.0;
 }
 
-  Future<void> _submitExpenditure() async {
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-    String description = _descriptionController.text.trim().toLowerCase();
-    String cropName = _cropController.text.trim().toLowerCase();
-    double amountSpent = double.tryParse(_amountController.text.trim()) ?? 0.0;
+Future<void> _submitExpenditure() async {
+  User? user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
 
-    setState(() {
-      _amountError = amountSpent > 0 ? null : "Enter a valid numeric amount";
-    });
+  String description = _descriptionController.text.trim().toLowerCase();
+  String cropName = _cropController.text.trim().toLowerCase();
+  double amountSpent = double.tryParse(_amountController.text.trim()) ?? 0.0;
 
-    if (description.isNotEmpty && cropName.isNotEmpty && _amountError == null && user != null) {
-      String currentDate = DateTime.now().toIso8601String().split('T').first;
+  setState(() {
+    _amountError = amountSpent > 0 ? null : "Enter a valid numeric amount";
+  });
 
-      Map<String, dynamic> recordData = {
-        'date': currentDate,
-        'typ': 'exp',
-        'partner': widget.partner,
-        'c_id': cropName,
-        'desc': description,
-        'amt': amountSpent,
-      };
+  if (description.isNotEmpty && cropName.isNotEmpty && _amountError == null) {
+    String currentDate = DateTime.now().toIso8601String().split('T').first;
 
-      WriteBatch batch = _firestore.batch();
-      try {
-        // Update records
-        DocumentReference recordDocRef = await _getOrCreateDoc('records', user.uid, 'r');
-        DocumentSnapshot recordSnapshot = await recordDocRef.get();
-        Map<String, dynamic>? recordDataMap = recordSnapshot.data() as Map<String, dynamic>?;
-        List<dynamic> records = List.from(recordDataMap?['r'] ?? []);
-        
-          records.add(recordData);        
+    Map<String, dynamic> recordData = {
+      'date': currentDate,
+      'typ': 'exp',
+      'partner': widget.partner,
+      'c_id': cropName,
+      'desc': description,
+      'amt': amountSpent,
+    };
 
-        batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
+    WriteBatch batch = _firestore.batch();
 
-        // Update profit data
-        await _updateProfits(user.uid, batch, cropName, amountSpent);
+    try {
+      // ✅ Run updates for records and profits in parallel
+      await Future.wait([
+        _updateRecords(user.uid, batch, recordData), 
+        _updateProfits(user.uid, batch, cropName, amountSpent)
+      ]);
 
-        await batch.commit();
+      // ✅ Commit the batch after parallel updates
+      await batch.commit();
 
-        _clearForm();
+      _clearForm();
+      setState(() {
+        _isDataSubmitted = true;
+      });
+
+      await flutterTts.speak("Successful completion.");  // ✅ Speak success
+
+      Future.delayed(const Duration(seconds: 3), () {
         setState(() {
-          _isDataSubmitted = true;
+          _isDataSubmitted = false;
         });
+      });
 
-        Future.delayed(const Duration(seconds: 3), () {
-          setState(() {
-            _isDataSubmitted = false;
-          });
-        });
-      } catch (e, stackTrace) {
-        _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
-        print('Error submitting record: $e');
-        print('Stack trace: $stackTrace');
-      }
+    } catch (e, stackTrace) {
+      await flutterTts.speak("Failed, failed");  // ✅ Speak failure
+      _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
+      print('Error submitting record: $e');
+      print('Stack trace: $stackTrace');
     }
   }
+}
+
+Future<void> _updateRecords(String userId, WriteBatch batch, Map<String, dynamic> recordData) async {
+  DocumentReference recordDocRef = await _getOrCreateDoc('records', userId, 'r');
+  DocumentSnapshot recordSnapshot = await recordDocRef.get();
+  Map<String, dynamic>? recordDataMap = recordSnapshot.data() as Map<String, dynamic>?; 
+  List<dynamic> records = List.from(recordDataMap?['r'] ?? []);
+        
+  records.add(recordData);
+  batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
+}
 
   Future<void> _updateProfits(String userId, WriteBatch batch, String cropName, double amountSpent) async {
   QuerySnapshot existingDocs = await _firestore.collection('partners')
@@ -352,77 +354,120 @@ double _extractNumber(String input) {
 
 
   void _showConfirmationDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Confirm Submission"),
-          content: Text(
-            'Crop Name: ${_cropController.text}\n'
-            'Description: ${_descriptionController.text}\n'
-            'Amount: ${_amountController.text}',
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: Text("Cancel"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            ElevatedButton(
-              child: Text("Confirm"),
-              onPressed: () {
-                Navigator.of(context).pop();
-                _submitExpenditure();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildTextField(String label, TextEditingController controller, int index, {bool isNumeric = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
-          Row(
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text("Confirm Submission"),
+        content: SingleChildScrollView( // Enables scrolling if content is too long
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
-                  inputFormatters: isNumeric
-                      ? [FilteringTextInputFormatter.allow(RegExp(r'^[0-9]\.?[0-9]'))]
-                      : [],
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(),
-                    errorText: isNumeric && _amountError != null ? _amountError : null,
-                  ),
-                  onChanged: (value) {
-                    _validateForm();
-                  },
-                ),
+              Text(
+                'Crop Name:',
+                style: TextStyle(fontWeight: FontWeight.bold),
               ),
-              IconButton(
-                icon: Icon(Icons.mic, color: (_isListening && _activeFieldIndex == index) ? Colors.red : Colors.blue),
-                onPressed: () {
-                  if (_isListening && _activeFieldIndex == index) {
-                    _stopListening();
-                  } else {
-                    _startListening(index);
-                  }
-                },
+              Text(
+                _cropController.text,
+                softWrap: true,
+              ),
+              SizedBox(height: 8), // Adds spacing
+
+              Text(
+                'Description:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _descriptionController.text,
+                softWrap: true,
+              ),
+              SizedBox(height: 8),
+
+              Text(
+                'Amount:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _amountController.text,
+                softWrap: true,
               ),
             ],
           ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: Text("Cancel"),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+          ElevatedButton(
+            child: Text("Confirm"),
+            onPressed: () {
+              Navigator.of(context).pop();
+              _submitExpenditure();
+            },
+          ),
         ],
-      ),
-    );
+      );
+    },
+  );
+}
+
+void _stopListening() async {
+  if (_isListening) {
+    await _speech.stop();
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+        _activeFieldIndex = null;
+        _assistantMessage = "Tap the mic to start voice input.";
+      });
+    }
   }
+}
+
+Widget _buildTextField(String label, TextEditingController controller, int index, {bool isNumeric = false}) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12.0),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                keyboardType: isNumeric ? TextInputType.number : TextInputType.text,
+                inputFormatters: isNumeric
+                    ? [FilteringTextInputFormatter.digitsOnly]
+                    : [],
+                decoration: InputDecoration(
+                  border: OutlineInputBorder(),
+                  errorText: isNumeric && _amountError != null ? _amountError : null,
+                ),
+                onChanged: (value) {
+                  _validateForm();
+                },
+              ),
+            ),
+            IconButton(
+              icon: Icon(Icons.mic, color: (_isListening && _activeFieldIndex == index) ? Colors.red : Colors.blue),
+              onPressed: () {
+                if (_isListening && _activeFieldIndex == index) {
+                  _stopListening();
+                } else {
+                  _startListening(index);
+                }
+              },
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildVoiceAssistantDisplay() {
     return Padding(
@@ -455,7 +500,8 @@ double _extractNumber(String input) {
     };
 
     return Scaffold(
-      appBar: AppBar(title: Text("Enter Expenditures")),
+      appBar: AppBar(title: Text("Enter Expenditures"),
+      backgroundColor: const Color.fromARGB(255, 203, 161, 232),),
       body: Padding(
         padding: EdgeInsets.all(16.0),
         child: SingleChildScrollView(

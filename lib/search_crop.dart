@@ -54,13 +54,12 @@ class _SearchCropScreenState extends State<SearchCropScreen> {
     Query query = firestore
         .collection('partners')
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: userId!)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: "${userId!}\uf8ff")
-        .orderBy(FieldPath.documentId, descending: false)
-        .limit(10); // Limit the number of documents fetched
+        .where(FieldPath.documentId, isLessThanOrEqualTo: "${userId!}\uf8ff");
+        
 
-    if (lastDocument != null) {
-      query = query.startAfterDocument(lastDocument!); // Start after the last document for pagination
-    }
+    // if (lastDocument != null) {
+    //   query = query.startAfterDocument(lastDocument!); // Start after the last document for pagination
+    // }
 
     QuerySnapshot userDocs = await query.get();
 
@@ -72,7 +71,7 @@ class _SearchCropScreenState extends State<SearchCropScreen> {
       return;
     }
 
-    lastDocument = userDocs.docs.last; // Update the last document fetched
+    //lastDocument = userDocs.docs.last; // Update the last document fetched
 
     for (var doc in userDocs.docs) {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
@@ -81,6 +80,9 @@ class _SearchCropScreenState extends State<SearchCropScreen> {
       profits.forEach((partner, partnerData) {
         Map<String, dynamic> crops = partnerData['crops'] ?? {};
         crops.forEach((cropName, cropData) {
+          double totalEarnings = (cropData['tear'] ?? 0.0).toDouble();
+      double totalExpenditures = (cropData['texp'] ?? 0.0).toDouble();
+          if (totalEarnings > 0 || totalExpenditures > 0) {
           if (!tempCropNames.contains(cropName)) {
             tempCropNames.add(cropName);
           }
@@ -95,7 +97,8 @@ class _SearchCropScreenState extends State<SearchCropScreen> {
             'total_expenditures': cropData['texp'] ?? 0.0,
             'total_profits': cropData['tp'] ?? 0.0,
           };
-        });
+        }
+      });
       });
     }
 
@@ -145,78 +148,137 @@ class _SearchCropScreenState extends State<SearchCropScreen> {
   }
 
   void _scrollListener() {
-    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent && !isLoading) {
-      fetchCropNames(); // Fetch more data when scrolled to the bottom
-    }
+  if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent &&
+      !isLoading && hasMoreData) { // ✅ Check if more data exists
+    fetchCropNames();
   }
+}
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Search Crop')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            DropdownButtonFormField<String>(
+  return Scaffold(
+    appBar: AppBar(
+      title: Text('Search Crop'),
+      backgroundColor: const Color.fromARGB(226, 205, 85, 169),
+    ),
+    body: Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 6,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            child: DropdownButtonFormField<String>(
               decoration: InputDecoration(
                 labelText: 'Select Crop Name',
+                border: InputBorder.none, // Removes the default underline
               ),
               items: cropNames.map((cropName) {
                 return DropdownMenuItem<String>(
-                  value: cropName,
+                  value: "crop_$cropName", // Prefix crops to prevent duplication
                   child: Text(cropName),
                 );
               }).toList(),
               onChanged: (value) {
                 if (value != null) {
-                  searchCrop(value);
+                  searchCrop(value.replaceFirst("crop_", "")); // Remove prefix before searching
                 }
               },
+              icon: Icon(Icons.arrow_drop_down, color: Colors.purple, size: 30),
             ),
-            SizedBox(height: 20),
-            if (selectedCrop == null)
-              Center(child: Text('No crop selected'))
-            else if (isLoading) // Show loading indicator while fetching data
-              Center(child: CircularProgressIndicator())
-            else if (partnerData.isEmpty && !isLoading) // Show no data message when search completes
-              Center(child: Text('No data available for this crop.'))
-            else
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController, // Attach the scroll controller
-                  itemCount: partnerData.length,
-                  itemBuilder: (context, index) {
-                    String partner = partnerData.keys.elementAt(index);
-                    var details = partnerData[partner]!;
-                    return Card(
-                      elevation: 3,
-                      margin: EdgeInsets.symmetric(vertical: 8),
-                      child: ListTile(
-                        title: Text('Partner: ${details['partner']}'),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Total Weight/ Pieces: ${details['total_kgs']}'),
-                            Text('Total Earnings: ₹${details['total_earnings']}'),
-                            Text('Total Expenditures: ₹${details['total_expenditures']}'),
-                            Text(
-                              'Profit: ₹${details['total_profits']}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: details['total_profits'] >= 0 ? Colors.green : Colors.red,
-                              ),
+          ),
+          SizedBox(height: 10),
+          if (selectedCrop == null)
+            Center(child: Text('No crop selected'))
+          else if (isLoading) // Show loading indicator while fetching data
+            Center(child: CircularProgressIndicator())
+          else if (partnerData.isEmpty && !isLoading) // Show no data message when search completes
+            Center(child: Text('No data available for this crop.'))
+          else
+            Expanded(
+              child: ListView.builder(
+                controller: _scrollController, // Attach the scroll controller
+                itemCount: partnerData.length,
+                itemBuilder: (context, index) {
+                  String partner = partnerData.keys.elementAt(index);
+                  var details = partnerData[partner]!;
+                  return Card(
+                    elevation: 3,
+                    margin: EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ListTile(
+                      title: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Partner: ${details['partner']}',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
                             ),
-                          ],
-                        ),
+                          ),
+                          Divider(color: Colors.grey), // Adds underline after partner name
+                        ],
                       ),
-                    );
-                  },
-                ),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Total wt/pcs/boxes: ${details['total_kgs']}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: const Color.fromARGB(255, 38, 41, 44),
+                            ),
+                          ),
+                          Text(
+                            'Total Earnings: ₹${details['total_earnings']}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: const Color.fromARGB(255, 38, 41, 44),
+                            ),
+                          ),
+                          Text(
+                            'Total Expenditures: ₹${details['total_expenditures']}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: const Color.fromARGB(255, 38, 41, 44),
+                            ),
+                          ),
+                          Text(
+                            'Profit: ₹${details['total_profits']}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: details['total_profits'] >= 0 ? Colors.green : Colors.red,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
-          ],
-        ),
+            ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

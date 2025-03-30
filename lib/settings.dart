@@ -394,23 +394,23 @@ Future<void> _deleteUserAccount(User user) async {
         unselectedItemColor: Colors.black,
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home, size: 40),
+            icon: Icon(Icons.home, size: 30),
             label: 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.search, size: 40),
+            icon: Icon(Icons.search, size: 30),
             label: 'Search',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.add, size: 40),
+            icon: Icon(Icons.add, size: 30),
             label: 'Add',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.access_time, size: 40),
+            icon: Icon(Icons.access_time, size: 30),
             label: 'Recent',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings, size: 40),
+            icon: Icon(Icons.settings, size: 30),
             label: 'Settings',
           ),
         ],

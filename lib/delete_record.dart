@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+
 
 class DeleteRecordsPage extends StatefulWidget {
   @override
@@ -9,17 +11,37 @@ class DeleteRecordsPage extends StatefulWidget {
 }
 
 class _DeleteRecordsPageState extends State<DeleteRecordsPage> {
+  final FlutterTts flutterTts = FlutterTts();
   String? _currentUserId;
   Map<String, List<Map<String, dynamic>>>? _allRecords; // Local storage for all records
   bool _isLoading = false; // For loading data
   bool _isDeleting = false; // For tracking deletion status
+  bool _isFetchingMore = false; // ✅ Track if more records are being fetched
+  bool _hasMoreRecords = true; // ✅ Track if there are more records to load
+  DocumentSnapshot? _lastDocument; // ✅ Store last document for pagination
+  final int _fetchLimit = 10; // ✅ Number of records per page
+  
+  final ScrollController _scrollController = ScrollController(); // ✅ Added ScrollController
 
   @override
   void initState() {
     super.initState();
     _getCurrentUser();
+    _scrollController.addListener(_scrollListener); // ✅ Attach listener
   }
-
+  void _scrollListener() {
+    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent &&
+        !_isFetchingMore &&
+        _hasMoreRecords) {
+      _fetchAllRecords(); // ✅ Fetch more records when scrolling reaches the bottom
+    }
+  }
+  
+@override
+void dispose() {
+  _scrollController.dispose();
+  super.dispose();
+}
   void _getCurrentUser() async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -31,23 +53,29 @@ class _DeleteRecordsPageState extends State<DeleteRecordsPage> {
   }
 
   Future<void> _fetchAllRecords() async {
-    if (_currentUserId == null) return;
+  if (_currentUserId == null || !_hasMoreRecords || _isFetchingMore) return;
 
-    setState(() {
-      _isLoading = true; // Start loading before fetching data
-    });
+  setState(() {
+    _isFetchingMore = true; // Start loading before fetching data
+  });
 
-    FirebaseFirestore firestore = FirebaseFirestore.instance;
-    Map<String, List<Map<String, dynamic>>> allRecords = {};
+  FirebaseFirestore firestore = FirebaseFirestore.instance;
+  Map<String, List<Map<String, dynamic>>> allRecords = _allRecords ?? {};
 
-    Query query = firestore
-        .collection('records')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: _currentUserId!)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: "${_currentUserId!}\uf8ff")
-        .orderBy(FieldPath.documentId, descending: true);
+  Query query = firestore
+      .collection('records')
+      .where(FieldPath.documentId, isGreaterThanOrEqualTo: _currentUserId!)
+      .where(FieldPath.documentId, isLessThanOrEqualTo: "${_currentUserId!}\uf8ff")
+      .orderBy(FieldPath.documentId, descending: true)
+      .limit(_fetchLimit);
 
-    QuerySnapshot userDocs = await query.get();
+  if (_lastDocument != null) {
+    query = query.startAfterDocument(_lastDocument!);
+  }
 
+  QuerySnapshot userDocs = await query.get();
+  if (userDocs.docs.isNotEmpty) {
+    _lastDocument = userDocs.docs.last;
     for (var doc in userDocs.docs) {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
       List<dynamic> records = data['r'] ?? [];
@@ -60,13 +88,14 @@ class _DeleteRecordsPageState extends State<DeleteRecordsPage> {
         });
       }
     }
-
-    setState(() {
-      _allRecords = allRecords;
-      _isLoading = false; // Stop loading after fetching data
-    });
   }
 
+  setState(() {
+    _allRecords = allRecords;
+    _isFetchingMore = false; // Stop loading after fetching data
+    _hasMoreRecords = userDocs.docs.length == _fetchLimit; // Stop if fewer than limit
+  });
+}
   void _navigateToFindByDate() {
     if (_currentUserId != null && _allRecords != null) {
       Navigator.push(
@@ -133,35 +162,43 @@ class _DeleteRecordsPageState extends State<DeleteRecordsPage> {
       String vendorId = recordData['record']['v_id'] ?? 'Unknown';
       String crop = recordData['record']['c_id'] ?? 'Unknown';
       List<QueryDocumentSnapshot> duesDocs = await _fetchDuesDocuments(vendorId);
-      bool canDelete = false;
-      for (var dueDoc in duesDocs) {
-        Map<String, dynamic> dueData = dueDoc.data() as Map<String, dynamic>;
-        List<dynamic> duesList = dueData['d'] ?? [];
-        for (var due in duesList) {
-          if (due['vendor_id'] == vendorId && due['crop_id'] == crop && (due['total_bill'] ?? 0) >= recordData['record']['tb']) {
-            due['total_bill'] = (due['total_bill'] ?? 0) - recordData['record']['tb'];
-            due['total_due'] = (due['total_due'] ?? 0) - (recordData['record']['tb'] - recordData['record']['a_p']);
-            due['amount_paid'] = (due['amount_paid'] ?? 0) - recordData['record']['a_p'];
-            due['weight'] = due['weight'] - recordData['record']['w'];
-            batch.update(dueDoc.reference, {'d': duesList});
-            canDelete = true;
-            break;
-          }
-        }
-        if (canDelete) break;
-      }
+      bool canDelete = false; // Track if a matching dues record is found
 
-      if (!canDelete) {
-        setState(() {
-          _isDeleting = false; // Stop the deletion loading indicator
-        });
+for (var dueDoc in duesDocs) {
+  Map<String, dynamic> dueData = dueDoc.data() as Map<String, dynamic>;
+  List<dynamic> duesList = dueData['d'] ?? [];
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Cannot delete record. No matching dues found or total due is less than total bill.")),
-        );
-        return;
-      }
+  for (var due in duesList) {
+    if (due['vendor_id'] == vendorId && 
+        due['crop_id'] == crop && 
+        (due['total_bill'] ?? 0) >= recordData['record']['tb']) {
+      
+      // Adjust dues amounts
+      due['total_bill'] = (due['total_bill'] ?? 0) - recordData['record']['tb'];
+      due['total_due'] = (due['total_due'] ?? 0) - (recordData['record']['tb'] - recordData['record']['a_p']);
+      due['amount_paid'] = (due['amount_paid'] ?? 0) - recordData['record']['a_p'];
+      due['weight'] = due['weight'] - recordData['record']['w'];
 
+      batch.update(dueDoc.reference, {'d': duesList});
+      canDelete = true;
+      break; // Stop searching once we find a match
+    }
+  }
+
+  if (canDelete) break; // Stop checking other docs if a match is found
+}
+
+//  If no matching dues record was found, stop the deletion process
+if (!canDelete) {
+  setState(() {
+    _isDeleting = false; // Stop the deletion loading indicator
+  });
+  await flutterTts.speak("Unable to delete");
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text("Cannot delete record. No matching dues found.")),
+  );
+  return; // Stop execution to prevent committing an incomplete batch
+}
       // Fetch all partner documents until the partner and crop are found
       QuerySnapshot partnerSnapshot = await FirebaseFirestore.instance
           .collection('partners')
@@ -209,7 +246,7 @@ class _DeleteRecordsPageState extends State<DeleteRecordsPage> {
         }
       }
     }
-
+  try{
     await batch.commit();
 
     // Remove the record from local variable
@@ -218,53 +255,86 @@ class _DeleteRecordsPageState extends State<DeleteRecordsPage> {
       _allRecords?[date]?.removeWhere((record) => record['docId'] == recordData['docId'] && record['record'] == recordData['record']);
       _isDeleting = false; // Stop the deletion loading indicator
     });
+    await flutterTts.speak("Successfully deleted");
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Record deleted successfully!")));
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Record deleted successfully!")),
-    );
-  }
+  }catch (e) {
+    setState(() {
+      _isDeleting = false;
+    });
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("Delete Record"),
-        backgroundColor: Colors.green,
-      ),
-      body: _isLoading
-          ? Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    "Select a date to view records",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  SizedBox(height: 40),
-                  Text(
-                    "Changes will also make change in total profit and dues.",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.red,
-                    ),
-                  ),
-                  SizedBox(height: 30),
-                  OptionButton(text: "Find by Date", onTap: _navigateToFindByDate),
-                ],
-              ),
-            ),
-    );
+    await flutterTts.speak("Failed");
+    await flutterTts.speak("Unable to delete");
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error deleting record: $e")));
   }
 }
 
+  @override
+  Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+      title: Text("Delete Record"),
+      backgroundColor: Colors.green,
+    ),
+    body: _isLoading
+        ? Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      "Select a date to view records",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      "Changes will also make changes in total profit and dues.",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.red,
+                      ),
+                    ),
+                    SizedBox(height: 10),
+                    OptionButton(text: "Find by Date", onTap: _navigateToFindByDate),
+                  ],
+                ),
+              ),
+              Expanded(
+  child: _allRecords == null || _allRecords!.isEmpty
+      ? Center()
+      : ListView.builder(
+          controller: _scrollController,
+          itemCount: _allRecords!.length + 1,
+          itemBuilder: (context, index) {
+            if (index == _allRecords!.length) {
+              return _isFetchingMore
+                  ? Center(child: CircularProgressIndicator())
+                  : SizedBox.shrink();
+            }
+
+            // Remove the display of 'date:' and 'records no:'
+            // String date = _allRecords!.keys.elementAt(index);
+            return Card(
+              margin: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              elevation: 4,
+            );
+          },
+        ),
+        ),
+            ],
+          ),
+  );
+}
+}
 class OptionButton extends StatelessWidget {
   final String text;
   final VoidCallback onTap;
@@ -282,7 +352,7 @@ class OptionButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color.fromARGB(255, 66, 221, 71),
           minimumSize: Size(double.infinity, 50),
-          textStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          textStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
         ),
         onPressed: onTap,
         child: Text(text, textAlign: TextAlign.center),
@@ -312,7 +382,7 @@ class _FindByDatePageState extends State<FindByDatePage> {
     DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
+      firstDate: DateTime(2025),
       lastDate: DateTime.now(),
     );
 
@@ -395,7 +465,7 @@ class _FindByDatePageState extends State<FindByDatePage> {
                   _selectedDate == null
                       ? 'Select a Date'
                       : DateFormat('d MMMM yyyy').format(_selectedDate!),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
                 ),
                 ElevatedButton(
                   onPressed: _pickDate,
@@ -403,7 +473,7 @@ class _FindByDatePageState extends State<FindByDatePage> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
             _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : _filteredRecords == null
@@ -425,22 +495,22 @@ class _FindByDatePageState extends State<FindByDatePage> {
                                       margin: const EdgeInsets.symmetric(vertical: 8),
                                       elevation: 4,
                                       child: ListTile(
-                                        title: Text("Partner: $partnerName", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+                                        title: Text("Partner: $partnerName", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.green)),
                                         subtitle: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             if (type == 'sale') ...[
                                               // Profit (Sales) Records Section
-                                              Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                              Text("Vendor: ${record['v_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                              Text("Total Bill: ₹${record['tb'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                              Text("Weight: ${record['w'] ?? '0'} kg", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                              Text("Amount Paid: ${record['a_p'] ?? '0'} kg", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                              Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              Text("Vendor: ${record['v_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              Text("Total Bill: ₹${record['tb'] ?? '0'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              Text("Weight: ${record['w'] ?? '0'} kg/boxes/pcs", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              Text("Amount Paid: ₹${record['a_p'] ?? '0'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                             ] else if (type == 'exp') ...[
                                               // Expenditure Records Section
-                                              Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                              Text("Description: ${record['desc'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                              Text("Amount Spent: ₹${record['amt'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                              Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              Text("Description: ${record['desc'] ?? 'Unknown'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                              Text("Amount Spent: ₹${record['amt'] ?? '0'}", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                                             ],
                                           ],
                                         ),

@@ -33,6 +33,7 @@ dependencies:
     sdk: flutter
   speech_to_text: ^6.1.1  # Latest stable version
   flutter_tts: ^3.8.5
+  audioplayers: ^0.20.1
   
   
   # firebase_core: ^2.15.0  # Replace with latest version
@@ -68,7 +69,6 @@ flutter:
   assets:
     - assets/logo.png
     
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

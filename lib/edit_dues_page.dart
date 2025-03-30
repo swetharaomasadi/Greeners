@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
+import 'package:flutter_tts/flutter_tts.dart';
 class EditDuesPage extends StatefulWidget {
   @override
   _EditDuesPageState createState() => _EditDuesPageState();
 }
 
 class _EditDuesPageState extends State<EditDuesPage> {
+  final FlutterTts flutterTts = FlutterTts();
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
   User? user;
   String? selectedDueDocId;
   double? oldDue;
@@ -18,14 +20,15 @@ class _EditDuesPageState extends State<EditDuesPage> {
   double? selectedTotalBill;
   final TextEditingController _dueController = TextEditingController();
   bool isConfirmEnabled = false;
+  bool _initialLoading = true;
 
   List<Map<String, dynamic>> filteredDuesData = [];
   bool isFiltered = false;
 
   // Pagination variables
   bool _isLoading = false;
-  bool _hasMore = true;
-  int _documentLimit = 10;
+  bool _hasMore = true; // This will be set to false after initial load if docs <= 3
+  int _documentLimit = 10; // Default limit
   DocumentSnapshot? _lastDocument;
   final ScrollController _scrollController = ScrollController();
 
@@ -36,12 +39,8 @@ class _EditDuesPageState extends State<EditDuesPage> {
     listenToDues();
     _dueController.addListener(_validateInput);
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
-        if (isFiltered) {
-          _fetchMoreFilteredDues();
-        } else {
-          _fetchMoreDues();
-        }
+      if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent && _lastDocument != null) {
+        _fetchMoreDues();
       }
     });
   }
@@ -66,7 +65,6 @@ class _EditDuesPageState extends State<EditDuesPage> {
         .collection('dues')
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: user!.uid)
         .where(FieldPath.documentId, isLessThanOrEqualTo: "${user!.uid}\uf8ff")
-        .orderBy(FieldPath.documentId, descending: true)
         .limit(_documentLimit)
         .snapshots()
         .listen((snapshot) {
@@ -79,13 +77,14 @@ class _EditDuesPageState extends State<EditDuesPage> {
         tempDuesData[doc.id] = duesList.map((due) {
           due['docId'] = doc.id; // Ensure docId is correctly set
           return Map<String, dynamic>.from(due);
-        }).toList();
+        }).where((due) => due['total_due'] > 0).toList(); // Filter dues with total_due > 0
       }
 
       setState(() {
         allDues = tempDuesData;
+        _initialLoading = false;
         if (snapshot.docs.length < _documentLimit) {
-          _hasMore = false;
+          _hasMore = false; // No more documents to fetch
         } else {
           _lastDocument = snapshot.docs.last;
         }
@@ -94,7 +93,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
   }
 
   Future<void> _fetchMoreDues() async {
-    if (_isLoading || !_hasMore) return;
+    if (_isLoading || !_hasMore || _lastDocument == null) return; // Prevent further fetching if no more docs or _lastDocument is null
 
     setState(() {
       _isLoading = true;
@@ -104,7 +103,6 @@ class _EditDuesPageState extends State<EditDuesPage> {
         .collection('dues')
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: user!.uid)
         .where(FieldPath.documentId, isLessThanOrEqualTo: "${user!.uid}\uf8ff")
-        .orderBy(FieldPath.documentId, descending: true)
         .startAfterDocument(_lastDocument!)
         .limit(_documentLimit)
         .get()
@@ -119,69 +117,13 @@ class _EditDuesPageState extends State<EditDuesPage> {
           tempDuesData[doc.id] = duesList.map((due) {
             due['docId'] = doc.id; // Ensure docId is correctly set
             return Map<String, dynamic>.from(due);
-          }).toList();
+          }).where((due) => due['total_due'] > 0).toList(); // Filter dues with total_due > 0
         }
 
         setState(() {
           allDues.addAll(tempDuesData);
           if (snapshot.docs.length < _documentLimit) {
-            _hasMore = false;
-          } else {
-            _lastDocument = snapshot.docs.last;
-          }
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _hasMore = false;
-          _isLoading = false;
-        });
-      }
-    }).catchError((error) {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error fetching more dues: $error")),
-      );
-    });
-  }
-
-  Future<void> _fetchMoreFilteredDues() async {
-    if (_isLoading || !_hasMore) return;
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    FirebaseFirestore.instance
-        .collection('dues')
-        .where(FieldPath.documentId, isGreaterThanOrEqualTo: user!.uid)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: "${user!.uid}\uf8ff")
-        .orderBy(FieldPath.documentId, descending: true)
-        .startAfterDocument(_lastDocument!)
-        .limit(_documentLimit)
-        .get()
-        .then((snapshot) {
-      if (snapshot.docs.isNotEmpty) {
-        List<Map<String, dynamic>> tempFilteredDuesData = [];
-
-        for (var doc in snapshot.docs) {
-          Map<String, dynamic> data = Map<String, dynamic>.from(doc.data());
-          List<dynamic> duesList = data['d'] ?? [];
-
-          duesList.forEach((due) {
-            if (due['vendor_id'] == selectedVendorId) {
-              due['docId'] = doc.id; // Ensure docId is correctly set
-              tempFilteredDuesData.add(Map<String, dynamic>.from(due));
-            }
-          });
-        }
-
-        setState(() {
-          filteredDuesData.addAll(tempFilteredDuesData);
-          if (snapshot.docs.length < _documentLimit) {
-            _hasMore = false;
+            _hasMore = false; // No more documents to fetch
           } else {
             _lastDocument = snapshot.docs.last;
           }
@@ -214,7 +156,10 @@ class _EditDuesPageState extends State<EditDuesPage> {
           double newDueAmount = oldDue - newAmountPaid;
 
           if (newDueAmount <= 0) {
-            due['total_due'] = 0; // Set total_due to 0 instead of removing
+            duesList.remove(due); // Remove due from local list
+            if (duesList.isEmpty) {
+              allDues.remove(docId); // Remove the entire document if no dues left
+            }
           } else {
             due['total_due'] = newDueAmount;
             due['amount_paid'] += newAmountPaid;
@@ -223,6 +168,13 @@ class _EditDuesPageState extends State<EditDuesPage> {
         }
       }
     });
+
+    // Update filtered data if necessary
+    if (isFiltered) {
+      setState(() {
+        filteredDuesData = allDues.values.expand((list) => list).where((due) => due['vendor_id'] == selectedVendorId).toList();
+      });
+    }
   }
 
   Future<void> updateDueInFirestore(String docId, String vendorId, String cropId, double totalBill, double newDue, double newAmountPaid) async {
@@ -234,6 +186,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
     }
 
     try {
+      WriteBatch batch = FirebaseFirestore.instance.batch();
       DocumentReference dueRef = FirebaseFirestore.instance.collection('dues').doc(docId);
       
       // Get the existing dues array
@@ -243,17 +196,26 @@ class _EditDuesPageState extends State<EditDuesPage> {
       // Update the due entry in the array
       List<dynamic> updatedDues = existingDues.map((due) {
         if (due['vendor_id'] == vendorId && due['crop_id'] == cropId && due['total_bill'] == totalBill) {
-          return {
-            ...due,
-            'total_due': newDue,
-            'amount_paid': newAmountPaid,
-          };
+          if (newDue <= 0) {
+            return null; // Mark for removal
+          } else {
+            return {
+              ...due,
+              'total_due': newDue,
+              'amount_paid': newAmountPaid,
+            };
+          }
         }
         return due;
-      }).toList();
+      }).where((due) => due != null).toList();
 
       // Update the entire dues array
-      await dueRef.update({'d': updatedDues});
+      if (updatedDues.isEmpty) {
+        batch.delete(dueRef); // Delete the entire document if no dues left
+      } else {
+        batch.update(dueRef, {'d': updatedDues});
+      }
+      await batch.commit();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Error updating due: $e")),
@@ -262,95 +224,130 @@ class _EditDuesPageState extends State<EditDuesPage> {
   }
 
   Future<void> updateDueAmount() async {
-    if (selectedDueDocId == null || oldDue == null || oldAmountPaid == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Invalid due data")),
-      );
-      return;
-    }
+  if (selectedDueDocId == null || oldDue == null || oldAmountPaid == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Invalid due data")),
+    );
+    return;
+  }
 
-    double? enteredAmount = double.tryParse(_dueController.text.trim());
-    if (enteredAmount == null || enteredAmount <= 0 || enteredAmount > oldDue!) {
-      return;
-    }
+  double? enteredAmount = double.tryParse(_dueController.text.trim());
+  if (enteredAmount == null || enteredAmount <= 0 || enteredAmount > oldDue!) {
+    return;
+  }
 
-    double newDue = oldDue! - enteredAmount;
-    double newAmountPaid = oldAmountPaid! + enteredAmount;
+  double newDue = oldDue! - enteredAmount;
+  double newAmountPaid = oldAmountPaid! + enteredAmount;
 
+  // Disable the button and show loading indicator
+  setState(() {
+    isConfirmEnabled = false; // Disable button
+  });
+
+  try {
     updateLocalDue(selectedDueDocId!, selectedVendorId!, selectedCropId!, selectedTotalBill!, newDue, enteredAmount);
     await updateDueInFirestore(selectedDueDocId!, selectedVendorId!, selectedCropId!, selectedTotalBill!, newDue, newAmountPaid);
+    
+    await flutterTts.speak("successful"); // ✅ Speak success
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Due updated successfully!")),
     );
+  } catch (e) {
+    await flutterTts.speak("failed"); // ❌ Speak failure
 
-    _dueController.clear(); // Clear the text in the controller
-    Navigator.of(context).pop(); // Close dialog
-  }
-
-  void showDueDialog(String dueDocId, String vendorId, String vendorName, String cropId, double due, double amountPaid, double totalBill) {
-    setState(() {
-      selectedDueDocId = dueDocId;
-      selectedVendorId = vendorId;
-      selectedCropId = cropId;
-      oldDue = due;
-      oldAmountPaid = amountPaid;
-      selectedTotalBill = totalBill;
-      isConfirmEnabled = false;
-    });
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Text("Update Due Amount", textAlign: TextAlign.center),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text("Current Due: ₹${oldDue?.toStringAsFixed(2) ?? '0.00'}", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text("Amount Paid: ₹${oldAmountPaid?.toStringAsFixed(2) ?? '0.00'}", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  SizedBox(height: 10),
-                  TextField(
-                    controller: _dueController,
-                    keyboardType: TextInputType.numberWithOptions(decimal: true),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 18),
-                    decoration: InputDecoration(
-                      hintText: "Enter amount",
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
-                      double? enteredAmount = double.tryParse(value.trim());
-                      setState(() {
-                        isConfirmEnabled = enteredAmount != null && enteredAmount > 0 && enteredAmount <= (oldDue ?? 0);
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop(); // Close dialog
-                  },
-                  child: Text("Cancel", style: TextStyle(color: Colors.red, fontSize: 16)),
-                ),
-                ElevatedButton(
-                  onPressed: isConfirmEnabled ? updateDueAmount : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isConfirmEnabled ? Colors.green : Colors.grey,
-                  ),
-                  child: Text("Confirm", style: TextStyle(fontSize: 16)),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Error updating due: $e")),
     );
   }
+
+  // Re-enable button and close the dialog
+  setState(() {
+    isConfirmEnabled = true;
+  });
+
+  _dueController.clear(); // Clear the text in the controller
+  Navigator.of(context).pop(); // Close dialog
+}
+
+
+  void showDueDialog(String dueDocId, String vendorId, String vendorName, String cropId, double due, double amountPaid, double totalBill) {
+  setState(() {
+    selectedDueDocId = dueDocId;
+    selectedVendorId = vendorId;
+    selectedCropId = cropId;
+    oldDue = due;
+    oldAmountPaid = amountPaid;
+    selectedTotalBill = totalBill;
+    isConfirmEnabled = true; // Initially enable the button
+  });
+
+  showDialog(
+    context: context,
+    builder: (context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text("Update Due Amount", textAlign: TextAlign.center),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text("Due: ₹${oldDue?.toStringAsFixed(2) ?? '0.00'}", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                Text("Amount Paid: ₹${oldAmountPaid?.toStringAsFixed(2) ?? '0.00'}", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                SizedBox(height: 10),
+                TextField(
+                  controller: _dueController,
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 14),
+                  decoration: InputDecoration(
+                    hintText: "Enter amount",
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    double? enteredAmount = double.tryParse(value.trim());
+                    setState(() {
+                      isConfirmEnabled = enteredAmount != null && enteredAmount > 0 && enteredAmount <= (oldDue ?? 0);
+                    });
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(); // Close dialog
+                },
+                child: Text("Cancel", style: TextStyle(color: Colors.red, fontSize: 15)),
+              ),
+              ElevatedButton(
+                onPressed: isConfirmEnabled
+                    ? () async {
+                        setState(() {
+                          isConfirmEnabled = false; // Disable button during processing
+                        });
+
+                        await updateDueAmount();
+
+                        setState(() {
+                          isConfirmEnabled = true; // Re-enable after completion
+                        });
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isConfirmEnabled ? Colors.green : Colors.grey,
+                ),
+                child: isConfirmEnabled
+                    ? Text("Confirm", style: TextStyle(fontSize: 15))
+                    : CircularProgressIndicator(color: Colors.white), // Show loading
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
 
   List<String> getUniqueVendors() {
     return allDues.values.expand((list) => list).map<String>((due) => due['vendor_id'] as String).toSet().toList();
@@ -360,63 +357,115 @@ class _EditDuesPageState extends State<EditDuesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Edit Dues"),
+        title: const Text("Edit Dues",style: TextStyle(color: Colors.white)),
+        backgroundColor: const Color.fromARGB(255, 73, 98, 179),
         actions: [
           IconButton(
-            icon: Icon(Icons.search),
+            icon: const Icon(Icons.search, color: Colors.white),
             onPressed: () {
               showVendorSelectionDialog();
             },
           ),
         ],
       ),
-      body: Column(
-        children: [
-          if (isFiltered)
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: ElevatedButton(
-                onPressed: () {
-                  setState(() {
-                    filteredDuesData = allDues.values.expand((list) => list).toList();
-                    isFiltered = false;
-                  });
-                },
-                child: Text("Show All Dues"),
+      body: _initialLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                children: [
+                  if (isFiltered)
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          filteredDuesData = allDues.values.expand((list) => list).toList();
+                          isFiltered = false;
+                        });
+                      },
+                      icon: const Icon(Icons.clear, color: Colors.white),
+                      label: const Text("Show All Dues"),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  const SizedBox(height: 5),
+                  if (allDues.isEmpty)
+                    const Expanded(
+                      child: Center(
+                        child: Text(
+                          "No dues found",
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      itemCount: isFiltered
+                          ? filteredDuesData.length
+                          : allDues.values.expand((duesList) => duesList).length,
+                      itemBuilder: (context, index) {
+                        var due = isFiltered
+                            ? filteredDuesData[index]
+                            : allDues.values.expand((duesList) => duesList).elementAt(index);
+
+                        return Card(
+                          elevation: 4,
+                          margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                            title: Text(
+                              "${due['vendor_id'] ?? 'Unknown'}",
+                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                              softWrap: true, // Allows text wrapping
+                              maxLines: 3, // Limits to 3 lines before cutting off
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "${due['crop_id'] ?? 'Unknown'}",
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                  softWrap: true, // Allows text wrapping
+                                  maxLines: 3, // Limits to 3 lines before cutting off
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  "Due: ₹${due['total_due'] ?? 0}",
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.red),
+                                ),
+                              ],
+                            ),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.green, size: 30),
+                              onPressed: () {
+                                showDueDialog(
+                                  due['docId'] ?? '',
+                                  due['vendor_id'] ?? '',
+                                  due['vendor_id'] ?? '',
+                                  due['crop_id'] ?? '',
+                                  due['total_due'] ?? 0,
+                                  due['amount_paid'] ?? 0,
+                                  due['total_bill'] ?? 0,
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (_isLoading)
+                    const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                ],
               ),
             ),
-          if (allDues.isEmpty)
-            Center(child: Text("No dues found")),
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              itemCount: isFiltered ? filteredDuesData.length + (_isLoading ? 1 : 0) : allDues.values.expand((duesList) => duesList).length + (_isLoading ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (isFiltered && index == filteredDuesData.length) {
-                  return Center(child: CircularProgressIndicator());
-                } else if (!isFiltered && index == allDues.values.expand((duesList) => duesList).length) {
-                  return Center(child: CircularProgressIndicator());
-                }
-                var due = isFiltered ? filteredDuesData[index] : allDues.values.expand((duesList) => duesList).elementAt(index);
-                return ListTile(
-                  title: Text("Vendor: ${due['vendor_id'] ?? 'Unknown'}"),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Crop ID: ${due['crop_id'] ?? 'Unknown'}"),
-                      Text("Due: ₹${due['total_due'] ?? 0}"),
-                    ],
-                  ),
-                  trailing: Icon(Icons.edit, color: Colors.green),
-                  onTap: () {
-                    showDueDialog(due['docId'] ?? '', due['vendor_id'] ?? '', due['vendor_id'] ?? '', due['crop_id'] ?? '', due['total_due'] ?? 0, due['amount_paid'] ?? 0, due['total_bill'] ?? 0);
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -428,23 +477,30 @@ class _EditDuesPageState extends State<EditDuesPage> {
           title: Text("Select Vendor"),
           content: Container(
             width: double.maxFinite,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: getUniqueVendors().length,
-              itemBuilder: (context, index) {
-                String vendorId = getUniqueVendors()[index];
-                return ListTile(
-                  title: Text(vendorId),
-                  onTap: () {
-                    setState(() {
-                      selectedVendorId = vendorId;
-                      filteredDuesData = allDues.values.expand((list) => list).where((due) => due['vendor_id'] == vendorId).toList();
-                      isFiltered = true;
-                    });
-                    Navigator.of(context).pop();
-                  },
-                );
-              },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Expanded(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: getUniqueVendors().length,
+                    itemBuilder: (context, index) {
+                      String vendorId = getUniqueVendors()[index];
+                      return ListTile(
+                        title: Text(vendorId),
+                        onTap: () {
+                          setState(() {
+                            isFiltered = true;
+                            selectedVendorId = vendorId;
+                            filteredDuesData = allDues.values.expand((list) => list).where((due) => due['vendor_id'] == vendorId).toList();
+                          });
+                          Navigator.of(context).pop();
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
           actions: [

@@ -60,8 +60,7 @@ class _SearchByDatePageState extends State<SearchByDatePage> {
     Query query = firestore
         .collection('records')
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: _currentUserId!)
-        .where(FieldPath.documentId, isLessThanOrEqualTo: "${_currentUserId!}\uf8ff")
-        .orderBy(FieldPath.documentId, descending: true);
+        .where(FieldPath.documentId, isLessThanOrEqualTo: "${_currentUserId!}\uf8ff");
 
     QuerySnapshot userDocs = await query.get();
 
@@ -88,7 +87,7 @@ class _SearchByDatePageState extends State<SearchByDatePage> {
     DateTime? picked = await showDatePicker(
       context: context,
       initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
+      firstDate: DateTime(2025),
       lastDate: DateTime.now(),
     );
 
@@ -183,102 +182,102 @@ class _SearchByDatePageState extends State<SearchByDatePage> {
 
   @override
   Widget build(BuildContext context) {
-    double profit = _totalEarnings - _totalExpenditures;
+  double profit = _totalEarnings - _totalExpenditures;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Search by Date'),
-        backgroundColor: Colors.orange.shade700,
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Date Picker
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  _selectedDate == null
-                      ? 'Select a Date'
-                      : DateFormat('d MMMM yyyy').format(_selectedDate!),
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
-                ),
-                ElevatedButton(
-                  onPressed: () => _pickDate(context),
-                  child: const Text('Pick Date'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-
-            // Display Total Earnings, Expenditures, and Profit
-            if (_records != null) ...[
-              Text('Total Earnings: ₹$_totalEarnings', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              Text('Total Expenditures: ₹$_totalExpenditures', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              Text('Profit: ₹$profit', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 20),
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('Search by Date', style: TextStyle(color: Colors.white)),
+      backgroundColor: const Color.fromARGB(255, 8, 162, 65),
+      centerTitle: true,
+    ),
+    body: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          // Date Picker
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                _selectedDate == null
+                    ? 'Select a Date'
+                    : DateFormat('d MMMM yyyy').format(_selectedDate!),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              ),
+              ElevatedButton(
+                onPressed: () => _pickDate(context),
+                child: const Text('Pick Date'),
+              ),
             ],
+          ),
+          const SizedBox(height: 10),
 
-            // Display Results
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator()) // Show loading indicator while fetching data
-                  : _paginatedRecords == null
-                      ? const Center(child: Text('Select a date and search records'))
-                      : _paginatedRecords!.isEmpty
-                          ? const Center(child: Text('No records found'))
-                          : ListView.builder(
-                              controller: _scrollController, // Attach the scroll controller
-                              itemCount: _paginatedRecords!.length,
-                              itemBuilder: (context, index) {
-                                var record = _paginatedRecords![index];
-
-                                String partnerName = record['partner'] ?? 'No Partner';
-                                String type = record['t'] ?? record['typ'] ?? 'Unknown';
-
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(vertical: 8),
-                                  elevation: 4,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        // Partner Name
-                                        Text(
-                                          "Partner: $partnerName",
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.deepOrange,
-                                          ),
-                                        ),
-                                        const Divider(),
-
-                                        if (type == 'sale') ...[
-                                          // Profit (Sales) Records Section
-                                          Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                          Text("Vendor: ${record['v_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16)),
-                                          Text("Total Bill: ₹${record['tb'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                          Text("Weight: ${record['w'] ?? '0'} kg", style: const TextStyle(fontSize: 16)),
-                                        ] else if (type == 'exp') ...[
-                                          // Expenditure Records Section
-                                          Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                          Text("Description: ${record['desc'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                          Text("Amount Spent: ₹${record['amt'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-            ),
+          // Display Total Earnings, Expenditures, and Profit
+          if (_records != null) ...[
+            Text('Total Earnings: ₹$_totalEarnings', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            Text('Total Expenditures: ₹$_totalExpenditures', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            Text('Profit: ₹$profit', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 10),
           ],
-        ),
+
+          // Display Results
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator()) // Show loading indicator while fetching data
+                : _paginatedRecords == null
+                    ? const Center(child: Text('Select a date and search records'))
+                    : _paginatedRecords!.isEmpty
+                        ? const Center(child: Text('No records found'))
+                        : ListView.builder(
+                            controller: _scrollController, // Attach the scroll controller
+                            itemCount: _paginatedRecords!.length,
+                            itemBuilder: (context, index) {
+                              var record = _paginatedRecords![index];
+
+                              String partnerName = record['partner'] ?? 'No Partner';
+                              String type = record['t'] ?? record['typ'] ?? 'Unknown';
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 8),
+                                elevation: 4,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Partner Name
+                                      Text(
+                                        "$partnerName",
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color.fromARGB(255, 117, 113, 246),
+                                        ),
+                                      ),
+                                      const Divider(),
+
+                                      if (type == 'sale') ...[
+                                        // Profit (Sales) Records Section
+                                        Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.green)),
+                                        Text("Vendor: ${record['v_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 15)),
+                                        Text("Total Bill: ₹${record['tb'] ?? '0'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                                        Text("Wt: ${record['w'] ?? '0'} kg/boxes/pcs", style: const TextStyle(fontSize: 15)),
+                                      ] else if (type == 'exp') ...[
+                                        // Expenditure Records Section
+                                        Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color.fromARGB(255, 244, 96, 85))),
+                                        Text("Desc: ${record['desc'] ?? 'Unknown'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
+                                        Text("Amount Spent: ₹${record['amt'] ?? '0'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }

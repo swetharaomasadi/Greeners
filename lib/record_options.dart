@@ -25,7 +25,7 @@ class RecordOptions extends StatelessWidget {
           children: [
             Image.asset(
               'assets/logo.png', 
-              height: 80,
+              height: 50,
             ),
           ],
         ),

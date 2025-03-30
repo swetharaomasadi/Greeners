@@ -21,7 +21,6 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
   String? _currentUserId;
   double _totalEarnings = 0;
   double _totalExpenditures = 0;
-  Map<String, List<dynamic>>? _allRecordsMap; // Local storage for all records
   bool _isLoading = false; // For loading data
   int _recordsPerPage = 10; // Number of records per page
   int _currentPage = 0; // Current page index
@@ -52,88 +51,97 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
   }
 
   Future<void> _fetchAllRecords() async {
-    if (_currentUserId == null) return;
+  if (_currentUserId == null) return;
 
-    setState(() {
-      _isLoading = true; // Start loading before fetching data
-    });
+  setState(() {
+    _isLoading = true;
+  });
 
-    FirebaseFirestore firestore = FirebaseFirestore.instance;
-    Map<String, List<dynamic>> allRecordsMap = {};
+  FirebaseFirestore firestore = FirebaseFirestore.instance;
+  String todayDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
 
-    Query query = firestore
+  try {
+    QuerySnapshot userDocs = await firestore
         .collection('records')
         .where(FieldPath.documentId, isGreaterThanOrEqualTo: _currentUserId!)
         .where(FieldPath.documentId, isLessThanOrEqualTo: "${_currentUserId!}\uf8ff")
-        .orderBy(FieldPath.documentId, descending: true);
-    QuerySnapshot userDocs = await query.get();
+        .get();
+
+    List<dynamic> todayRecords = []; // ✅ Store only today's records
 
     for (var doc in userDocs.docs) {
       Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-      List<dynamic> records = data['r'] ?? [];
 
-      for (var record in records) {
-        String date = record['date'];
-        if (!allRecordsMap.containsKey(date)) {
-          allRecordsMap[date] = [];
+      if (data.containsKey('r')) {  // ✅ Check if 'r' exists to prevent errors
+        for (var record in data['r']) {
+          if (record['date'] == todayDate) {  
+            todayRecords.add(record); // ✅ Directly store only today's records
+          }
         }
-        allRecordsMap[date]!.add(record);
       }
     }
 
+    // ✅ Update _records inside setState
     setState(() {
-      _allRecordsMap = allRecordsMap;
-      _isLoading = false; // Stop loading after fetching data
-      _searchRecords(); // Search records after fetching data
+      _records = todayRecords; 
+      _isLoading = false;
+      if (_records.isNotEmpty) {
+        _searchRecords(); // ✅ Process only if records exist
+      }
     });
+
+  } catch (e) {
+    print("Error fetching today's records: $e");
+    setState(() => _isLoading = false);
   }
+}
 
   void _searchRecords() {
-    if (_allRecordsMap == null) return;
 
-    String formattedDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    List<dynamic> allRecords = _allRecordsMap![formattedDate] ?? [];
+  double totalEarnings = 0;
+  double totalExpenditures = 0;
 
-    double totalEarnings = 0;
-    double totalExpenditures = 0;
-
-    for (var record in allRecords) {
-      if (record['t'] == 'sale') {
-        totalEarnings += record['tb'] ?? 0;
-      } else if (record['typ'] == 'exp') {
-        totalExpenditures += record['amt'] ?? 0;
-      }
+  for (var record in _records) {
+    if (record['t'] == 'sale') {
+      totalEarnings += (record['tb'] ?? 0).toDouble(); // Convert to double for accuracy
+    } else if (record['typ'] == 'exp') {
+      totalExpenditures += (record['amt'] ?? 0).toDouble();
     }
-
-    setState(() {
-      _records = allRecords;
-      _totalEarnings = totalEarnings;
-      _totalExpenditures = totalExpenditures;
-      _updatePaginatedRecords(); // Update paginated records
-    });
   }
+
+  setState(() {
+    _totalEarnings = totalEarnings;
+    _totalExpenditures = totalExpenditures;
+  _updatePaginatedRecords(); // Update pagination after processing
+  });
+}
+
 
   void _updatePaginatedRecords() {
-    if (_records.isEmpty) return;
+  if (_records.isEmpty) return;
 
-    int startIndex = _currentPage * _recordsPerPage;
-    int endIndex = startIndex + _recordsPerPage;
+  int startIndex = _currentPage * _recordsPerPage;
+  int endIndex = startIndex + _recordsPerPage;
 
-    setState(() {
-      _paginatedRecords = _records.sublist(
-        startIndex,
-        endIndex > _records.length ? _records.length : endIndex,
-      );
-    });
-  }
+  setState(() {
+    _paginatedRecords = _records.sublist(
+      startIndex,
+      (endIndex > _records.length) ? _records.length : endIndex,
+    );
+  });
+}
+
 
   void _scrollListener() {
-    if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
-      _loadNextPage(); // Load next page when scrolled to the bottom
-    } else if (_scrollController.position.pixels == _scrollController.position.minScrollExtent) {
-      _loadPreviousPage(); // Load previous page when scrolled to the top
-    }
+  if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent &&
+      (_currentPage + 1) * _recordsPerPage < _records.length) {
+    _loadNextPage(); // ✅ Load next page only if more records exist
+  } else if (_scrollController.position.pixels == _scrollController.position.minScrollExtent &&
+             _currentPage > 0) {
+    _loadPreviousPage(); // ✅ Load previous page only if not on the first page
   }
+}
+
 
   void _loadNextPage() {
     if (_records.isEmpty) return;
@@ -205,26 +213,26 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
         title: const Text(
           'Recent Records',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 20,
             fontWeight: FontWeight.bold,
             color: Colors.white,
           ),
         ),
-        backgroundColor: Colors.deepOrange,
+        backgroundColor: Colors.green,
         centerTitle: true,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            const SizedBox(height: 20),
+            const SizedBox(height: 5),
 
             // Display Total Earnings, Expenditures, and Profit
             if (_records.isNotEmpty) ...[
-              Text('Total Earnings: ₹$_totalEarnings', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              Text('Total Expenditures: ₹$_totalExpenditures', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              Text('Profit: ₹$profit', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 20),
+              Text('Total Earnings: ₹$_totalEarnings', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              Text('Total Expenditures: ₹$_totalExpenditures', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              Text('Profit: ₹$profit', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 10),
             ],
 
             // Display Results
@@ -252,26 +260,40 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
                                   children: [
                                     // Partner Name
                                     Text(
-                                      "Partner: $partnerName",
+                                      "$partnerName",
                                       style: const TextStyle(
-                                        fontSize: 18,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.deepOrange,
+                                        color: Colors.pink,
                                       ),
                                     ),
                                     const Divider(),
 
                                     if (type == 'sale') ...[
                                       // Profit (Sales) Records Section
-                                      Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                      Text("Vendor: ${record['v_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16)),
-                                      Text("Total Bill: ₹${record['tb'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                      Text("Weight: ${record['w'] ?? '0'} kg", style: const TextStyle(fontSize: 16)),
+                                  Text(
+                                    "Crop: ${record['c_id'] ?? 'Unknown'}",
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.green, // Corrected color format
+                                    ),
+                                  ),
+                                      Text("Vendor: ${record['v_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 15)),
+                                      Text("Total Bill: ₹${record['tb'] ?? '0'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                                      Text("Wt: ${record['w'] ?? '0'} kg/boxes/pcs", style: const TextStyle(fontSize: 15)),
                                     ] else if (type == 'exp') ...[
                                       // Expenditure Records Section
-                                      Text("Crop: ${record['c_id'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                      Text("Description: ${record['desc'] ?? 'Unknown'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                                      Text("Amount Spent: ₹${record['amt'] ?? '0'}", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  Text(
+                                    "Crop: ${record['c_id'] ?? 'Unknown'}",
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.green, // Corrected color format
+                                    ),
+                                  ),
+                                  Text("Desc: ${record['desc'] ?? 'Unknown'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),maxLines: 2,overflow: TextOverflow.ellipsis,),
+                                  Text("Amount Spent: ₹${record['amt'] ?? '0'}", style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                                     ],
                                   ],
                                 ),
@@ -295,12 +317,12 @@ class _RecentRecordsPageState extends State<RecentRecordsPage> {
       selectedItemColor: Colors.black,
       unselectedItemColor: Colors.black,
       items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.home, size: 40), label: 'Home'),
-        BottomNavigationBarItem(icon: Icon(Icons.search, size: 40), label: 'Search'),
-        BottomNavigationBarItem(icon: Icon(Icons.add, size: 40), label: 'Add'),
+        BottomNavigationBarItem(icon: Icon(Icons.home, size: 30), label: 'Home'),
+        BottomNavigationBarItem(icon: Icon(Icons.search, size: 30), label: 'Search'),
+        BottomNavigationBarItem(icon: Icon(Icons.add, size: 30), label: 'Add'),
         BottomNavigationBarItem(
-          icon: Icon(Icons.access_time, size: 40, color: Colors.blue), label: 'Recent'),
-        BottomNavigationBarItem(icon: Icon(Icons.settings, size: 40), label: 'Settings'),
+          icon: Icon(Icons.access_time, size: 30, color: Colors.blue), label: 'Recent'),
+        BottomNavigationBarItem(icon: Icon(Icons.settings, size: 30), label: 'Settings'),
       ],
     );
   }

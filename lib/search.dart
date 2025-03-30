@@ -81,17 +81,16 @@ class _SearchViewScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        title: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            Image.asset(
-              'assets/logo.png',
-              height: 80,
-            ),
-          ],
+        title: const Text(
+          'Search Page',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
+        backgroundColor: const Color.fromARGB(255, 234, 82, 173),
+        centerTitle: true,
       ),
       body: Column(
         children: [
@@ -149,12 +148,12 @@ class _SearchViewScreenState extends State<SearchScreen> {
         selectedItemColor: Colors.black,
         unselectedItemColor: Colors.black,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home, size: 40), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.home, size: 30), label: 'Home'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.search, size: 40, color: Colors.blue), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.add, size: 40), label: 'Add'),
-          BottomNavigationBarItem(icon: Icon(Icons.access_time, size: 40), label: 'Recent'),
-          BottomNavigationBarItem(icon: Icon(Icons.settings, size: 40), label: 'Settings'),
+              icon: Icon(Icons.search, size: 30, color: Colors.blue), label: 'Search'),
+          BottomNavigationBarItem(icon: Icon(Icons.add, size: 30), label: 'Add'),
+          BottomNavigationBarItem(icon: Icon(Icons.access_time, size: 30), label: 'Recent'),
+          BottomNavigationBarItem(icon: Icon(Icons.settings, size: 30), label: 'Settings'),
         ],
       ),
     );

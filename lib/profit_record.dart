@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class ProfitRecord extends StatefulWidget {
   final String partner;
@@ -14,6 +15,8 @@ class ProfitRecord extends StatefulWidget {
 }
 
 class ProfitRecordScreenState extends State<ProfitRecord> {
+  final FlutterTts flutterTts = FlutterTts();
+
   final _vendorController = TextEditingController();
   final _itemController = TextEditingController();
   final _kgsController = TextEditingController();
@@ -75,71 +78,76 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
   }
 
   Future<void> _submitRecord() async {
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+  User? user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
 
-    double amountPaid = double.tryParse(_amountPaidController.text) ?? 0.0;
-    double weight = double.tryParse(_kgsController.text) ?? 0.0;
-    
-    amountPaid = double.parse(amountPaid.toStringAsFixed(2));
-    weight = double.parse(weight.toStringAsFixed(2));
-    double totalDue = _totalBill - amountPaid;
+  double amountPaid = double.tryParse(_amountPaidController.text) ?? 0.0;
+  double weight = double.tryParse(_kgsController.text) ?? 0.0;
+  
+  amountPaid = double.parse(amountPaid.toStringAsFixed(2));
+  weight = double.parse(weight.toStringAsFixed(2));
+  double totalDue = _totalBill - amountPaid;
 
-    String currentDate = DateTime.now().toIso8601String().split('T').first;
+  String currentDate = DateTime.now().toIso8601String().split('T').first;
 
-    Map<String, dynamic> recordData = {
-      't': 'sale',
-      'v_id': _vendorController.text,
-      'c_id': _itemController.text,
-      'w': weight,
-      'tb': _totalBill,
-      'partner': widget.partner,
-      'date': currentDate,
-      'a_p':amountPaid
-    };
+  Map<String, dynamic> recordData = {
+    't': 'sale',
+    'v_id': _vendorController.text,
+    'c_id': _itemController.text,
+    'w': weight,
+    'tb': _totalBill,
+    'partner': widget.partner,
+    'date': currentDate,
+    'a_p': amountPaid
+  };
 
-    WriteBatch batch = _firestore.batch();
-    try {
-      // Update records
-      DocumentReference recordDocRef = await _getOrCreateDoc('records', user.uid, 'r');
-      DocumentSnapshot recordSnapshot = await recordDocRef.get();
-      Map<String, dynamic>? recordDataMap = recordSnapshot.data() as Map<String, dynamic>?; 
-      List<dynamic> records = List.from(recordDataMap?['r'] ?? []);
-            
-        records.add(recordData);
-    
-      batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
+  WriteBatch batch = _firestore.batch();
 
-      // Update profit data
-      await _updateProfits(user.uid, batch);
+  try {
+    // ✅ Run all updates in parallel
+    await Future.wait([
+      _addRecord(user.uid, batch, recordData),
+      _updateProfits(user.uid, batch),
+      if (totalDue > 0) _updateDues(user.uid, batch, amountPaid, weight, totalDue, currentDate),
+    ]);
 
-      // Update dues if totalDue is greater than 0
-      if (totalDue > 0) {
-        await _updateDues(user.uid, batch, amountPaid, weight, totalDue, currentDate);
-      }
+    // ✅ Commit batch after parallel updates
+    await batch.commit();
 
-      await batch.commit();
+    _clearForm();
+    if (mounted) {
+      setState(() {
+        _isDataSubmitted = true;
+      });
+    }
 
-      _clearForm();
+    await flutterTts.speak("Successful completion.");  // ✅ Speak success
+
+    Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
-          _isDataSubmitted = true;
+          _isDataSubmitted = false;
         });
       }
+    });
 
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) {
-          setState(() {
-            _isDataSubmitted = false;
-          });
-        }
-      });
-    } catch (e, stackTrace) {
-      _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
-      print('Error submitting record: $e');
-      print('Stack trace: $stackTrace');
-    }
+  } catch (e, stackTrace) {
+    await flutterTts.speak("Failed, failed");  // ✅ Speak failure
+    _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
+    print('Error submitting record: $e');
+    print('Stack trace: $stackTrace');
   }
+}
+
+Future<void> _addRecord(String userId, WriteBatch batch, Map<String, dynamic> recordData) async {
+  DocumentReference recordDocRef = await _getOrCreateDoc('records', userId, 'r');
+  DocumentSnapshot recordSnapshot = await recordDocRef.get();
+  Map<String, dynamic>? recordDataMap = recordSnapshot.data() as Map<String, dynamic>?; 
+  List<dynamic> records = List.from(recordDataMap?['r'] ?? []);
+        
+  records.add(recordData);
+  batch.set(recordDocRef, {'r': records}, SetOptions(merge: true));
+}
 
   Future<void> _updateProfits(String userId, WriteBatch batch) async {
   QuerySnapshot existingDocs = await _firestore.collection('partners')
@@ -309,6 +317,7 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
           setState(() {
             _isListening = false;
             _activeFieldIndex = null;
+            _stopListening();
           });
         }
       },
@@ -401,38 +410,95 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
   }
 
   void _showConfirmationDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Confirm Submission"),
-          content: Text(
-            'Vendor Name: ${_vendorController.text}\n'
-            'Crop Name: ${_itemController.text}\n'
-            'Kgs/Items: ${_kgsController.text}\n'
-            'Cost per Kg/Item: ${_costController.text}\n'
-            'Amount Paid: ${_amountPaidController.text}\n'
-            'Total Bill: $_totalBill',
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text("Confirm Submission"),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Vendor Name:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _vendorController.text,
+                softWrap: true,
+              ),
+              SizedBox(height: 8),
+
+              Text(
+                'Crop Name:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _itemController.text,
+                softWrap: true,
+              ),
+              SizedBox(height: 8),
+
+              Text(
+                'Kgs/Items:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _kgsController.text,
+                softWrap: true,
+              ),
+              SizedBox(height: 8),
+
+              Text(
+                'Cost per Kg/Item:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _costController.text,
+                softWrap: true,
+              ),
+              SizedBox(height: 8),
+
+              Text(
+                'Amount Paid:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                _amountPaidController.text,
+                softWrap: true,
+              ),
+              SizedBox(height: 8),
+
+              Text(
+                'Total Bill:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                '$_totalBill',
+                softWrap: true,
+              ),
+            ],
           ),
-          actions: <Widget>[
-            TextButton(
-              child: Text("Cancel"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-            ),
-            ElevatedButton(
-              child: Text("Confirm"),
-              onPressed: () {
-                Navigator.of(context).pop();
-                _submitRecord();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: Text("Cancel"),
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+          ),
+          ElevatedButton(
+            child: Text("Confirm"),
+            onPressed: () {
+              Navigator.of(context).pop();
+              _submitRecord();
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
 
   void _showErrorDialog(String message) {
   showDialog(
@@ -531,40 +597,69 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profit Record'),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Partner: ${widget.partner}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
-              _buildVoiceAssistantDisplay(),
-              _buildConfirmationMessage(),
-              _buildTextField('Vendor Name', _vendorController, 0),
-              _buildTextField('Crop Name', _itemController, 1),
-              _buildTextField('Kgs/Items', _kgsController, 2, isNumeric: true),
-              _buildTextField('Cost per Kg/Item', _costController, 3, isNumeric: true),
-              Text('Total Bill: ₹${_totalBill.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              _buildTextField('Amount Paid', _amountPaidController, 4, isNumeric: true),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _isSubmitEnabled ? _showConfirmationDialog : null,
-                style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.all(
-                    _isSubmitEnabled ? Colors.blue : Colors.grey,
+  @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+      title: const Text('Profit Record'),
+      backgroundColor: const Color.fromARGB(255, 203, 81, 207),
+    ),
+    body: Stack(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Partner: ${widget.partner}',
+                    style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue)),
+                _buildVoiceAssistantDisplay(),
+                _buildConfirmationMessage(),
+                _buildTextField('Vendor Name', _vendorController, 0),
+                _buildTextField('Crop Name', _itemController, 1),
+                _buildTextField('Kgs/Items', _kgsController, 2,
+                    isNumeric: true),
+                _buildTextField('Cost per Kg/Item', _costController, 3,
+                    isNumeric: true),
+                Text('Total Bill: ₹${_totalBill.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
+                _buildTextField('Amount Paid', _amountPaidController, 4,
+                    isNumeric: true),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: _isSubmitEnabled ? _showConfirmationDialog : null,
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.all(
+                      _isSubmitEnabled ? Colors.blue : Colors.grey,
+                    ),
                   ),
+                  child: Text('Submit'),
                 ),
-                child: Text('Submit'),
-              ),
-            ],
+                SizedBox(height: 30), // Extra space for scrolling
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            height: 30,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.bottomCenter,
+                end: Alignment.topCenter,
+                colors: [Colors.white, Colors.white.withOpacity(0)],
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }

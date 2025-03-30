@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class CompleteCrop extends StatefulWidget {
   const CompleteCrop({super.key});
@@ -10,11 +11,14 @@ class CompleteCrop extends StatefulWidget {
 }
 
 class _CompleteCropState extends State<CompleteCrop> {
+  final FlutterTts flutterTts = FlutterTts();
+
   List<String> partnerNames = [];
   List<String> cropNames = [];
   String? selectedPartner;
   String? selectedCrop;
   bool isLoading = false;
+  bool isCropsLoading = false; // New flag for loading crops
 
   @override
   void initState() {
@@ -23,63 +27,110 @@ class _CompleteCropState extends State<CompleteCrop> {
   }
 
   Future<void> fetchData() async {
-    FirebaseFirestore firestore = FirebaseFirestore.instance;
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    setState(() {
+      isLoading = true;
+    });
 
-    // Fetch the first document for the user
-    DocumentSnapshot userDoc = await firestore.collection('partners').doc(user.uid).get();
-    if (userDoc.exists) {
-      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
-      if (userData != null && userData['partners'] != null) {
-        List<String> partners = [];
-        for (String partner in userData['partners']) {
-          if (userData['profits'][partner]['tp'] != 0) {
-            partners.add(partner);
+    try {
+      FirebaseFirestore firestore = FirebaseFirestore.instance;
+      User? user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // Fetch the first document for the user
+      DocumentSnapshot userDoc = await firestore.collection('partners').doc(user.uid).get();
+      if (userDoc.exists) {
+        Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+        if (userData != null && userData['partners'] != null) {
+          List<String> partners = [];
+          for (String partner in userData['partners']) {
+            if (userData['profits'][partner]['tp'] != 0) {
+              partners.add(partner);
+            }
           }
+          // Add "No Gain Sharer" explicitly to the partners list
+          partners.add("No Gain Sharer");
+          setState(() {
+            partnerNames = partners;
+          });
         }
-        // Add "No Gain Sharer" explicitly to the partners list
-        partners.add("No Gain Sharer");
-        setState(() {
-          partnerNames = partners;
-        });
       }
+    } catch (e) {
+      print("Error fetching partners: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error fetching partners: $e")),
+      );
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
     }
   }
 
   Future<void> fetchCropsForPartner(String partner, StateSetter dialogSetState) async {
-    FirebaseFirestore firestore = FirebaseFirestore.instance;
-    User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    dialogSetState(() {
+      isCropsLoading = true;
+    });
 
-    List<String> crops = [];
+    try {
+      FirebaseFirestore firestore = FirebaseFirestore.instance;
+      User? user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
 
-    DocumentSnapshot userDoc = await firestore.collection('partners').doc(user.uid).get();
-    if (userDoc.exists) {
-      Map<String, dynamic>? data = userDoc.data() as Map<String, dynamic>?;
-      if (data != null && data['profits'] != null) {
-        Map<String, dynamic> profits = data['profits'];
-        if (profits.containsKey(partner)) {
-          Map<String, dynamic> partnerData = profits[partner];
-          Map<String, dynamic> cropsData = partnerData['crops'];
+      List<String> crops = [];
+      bool partnerFound = false;
 
-          // Filter crops with tp values not equal to 0
-          crops.addAll(
-            cropsData.keys.where((crop) {
-              return cropsData[crop]['tp'] != 0;
-            }),
-          );
+      QuerySnapshot userDocs = await firestore.collection('partners')
+          .where(FieldPath.documentId, isGreaterThanOrEqualTo: user.uid)
+          .where(FieldPath.documentId, isLessThanOrEqualTo: "${user.uid}\uf8ff")
+          .orderBy(FieldPath.documentId, descending: true)
+          .get();
+
+      for (var doc in userDocs.docs) {
+        Map<String, dynamic>? data = doc.data() as Map<String, dynamic>?;
+        if (data != null && data['profits'] != null) {
+          Map<String, dynamic> profits = data['profits'];
+          if (profits.containsKey(partner)) {
+            Map<String, dynamic> partnerData = profits[partner];
+            Map<String, dynamic> cropsData = partnerData['crops'];
+
+            crops.addAll(
+              cropsData.keys.where((crop) {
+                return cropsData[crop]['tp'] != 0;
+              }),
+            );
+            partnerFound = true;
+            break;
+          }
         }
       }
-    }
 
-    dialogSetState(() {
-      cropNames = crops;
-      selectedCrop = null; // Reset crop selection
-    });
+      dialogSetState(() {
+        cropNames = crops;
+        selectedCrop = null;
+      });
+
+      if (crops.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("No crops found for the selected partner.")),
+        );
+      }
+    } catch (e) {
+      print("Error fetching crops: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error fetching crops: $e")),
+      );
+    } finally {
+      dialogSetState(() {
+        isCropsLoading = false;
+      });
+    }
   }
 
-  void completeCrop() async {
+  Future<void> completeCrop() async {
+    setState(() {
+      isLoading = true;
+    });
+
     User? user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -87,12 +138,11 @@ class _CompleteCropState extends State<CompleteCrop> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Please select a partner and crop before proceeding!")),
       );
+      setState(() {
+        isLoading = false;
+      });
       return;
     }
-
-    setState(() {
-      isLoading = true;
-    });
 
     FirebaseFirestore firestore = FirebaseFirestore.instance;
     WriteBatch batch = firestore.batch();
@@ -181,7 +231,7 @@ class _CompleteCropState extends State<CompleteCrop> {
 
         try {
           await batch.commit(); // Execute batch updates
-          print("Selected records removed successfully!");
+          await flutterTts.speak("successfully Crop completed.");  // ✅ Speak success
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Crop completed and records deleted successfully!")),
           );
@@ -191,18 +241,16 @@ class _CompleteCropState extends State<CompleteCrop> {
             selectedPartner = null;
             selectedCrop = null;
             cropNames = [];
+            isLoading = false;
           });
         } catch (e) {
-          print("Error removing records: $e");
+        await flutterTts.speak("failed completion.");  // ❌ Speak failure
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text("Error removing records: $e")),
           );
-        } finally {
-          if (mounted) {
-            setState(() {
-              isLoading = false;
-            });
-          }
+          setState(() {
+            isLoading = false;
+          });
         }
       }
     }
@@ -219,38 +267,46 @@ class _CompleteCropState extends State<CompleteCrop> {
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  DropdownButton<String>(
-                    value: selectedPartner,
-                    hint: Text("Select Partner"),
-                    isExpanded: true,
-                    items: partnerNames.map((partner) {
-                      return DropdownMenuItem(value: partner, child: Text(partner));
-                    }).toList(),
-                    onChanged: (value) {
-                      print("Selected partner: $value"); // Debugging statement
-                      setState(() {
-                        selectedPartner = value;
-                        selectedCrop = null; // Reset selected crop when partner is changed
-                        cropNames = []; // Clear crop names while fetching new crops
-                      });
-                      fetchCropsForPartner(value!, setState); // Fetch crops for the selected partner
-                    },
-                  ),
+                  if (partnerNames.isEmpty)
+                    Text("No data available"),
+                  if (partnerNames.isNotEmpty)
+                    DropdownButton<String>(
+                      value: selectedPartner,
+                      hint: Text("Select Partner"),
+                      isExpanded: true,
+                      items: partnerNames.map((partner) {
+                        return DropdownMenuItem(value: partner, child: Text(partner));
+                      }).toList(),
+                      onChanged: (value) {
+                        print("Selected partner: $value"); // Debugging statement
+                        setState(() {
+                          selectedPartner = value;
+                          selectedCrop = null; // Reset selected crop when partner is changed
+                          cropNames = []; // Clear crop names while fetching new crops
+                        });
+                        fetchCropsForPartner(value!, setState); // Fetch crops for the selected partner
+                      },
+                    ),
                   SizedBox(height: 10),
-                  DropdownButton<String>(
-                    value: selectedCrop,
-                    hint: Text("Select Crop"),
-                    isExpanded: true,
-                    items: cropNames.map((crop) {
-                      return DropdownMenuItem(value: crop, child: Text(crop));
-                    }).toList(),
-                    onChanged: selectedPartner != null ? (value) {
-                      print("Selected crop: $value"); // Debugging statement
-                      setState(() {
-                        selectedCrop = value;
-                      });
-                    } : null, // Disable crop dropdown if partner is not selected
-                  ),
+                  if (isCropsLoading)
+                    CircularProgressIndicator(),
+                  if (!isCropsLoading && cropNames.isEmpty && selectedPartner != null)
+                    Text("No crops found for the selected partner."),
+                  if (!isCropsLoading && cropNames.isNotEmpty)
+                    DropdownButton<String>(
+                      value: selectedCrop,
+                      hint: Text("Select Crop"),
+                      isExpanded: true,
+                      items: cropNames.map((crop) {
+                        return DropdownMenuItem(value: crop, child: Text(crop));
+                      }).toList(),
+                      onChanged: selectedPartner != null ? (value) {
+                        print("Selected crop: $value"); // Debugging statement
+                        setState(() {
+                          selectedCrop = value;
+                        });
+                      } : null, // Disable crop dropdown if partner is not selected
+                    ),
                 ],
               ),
               actions: [
@@ -291,12 +347,12 @@ class _CompleteCropState extends State<CompleteCrop> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Icon(Icons.warning, size: 60, color: Colors.red),
-              SizedBox(height: 20),
+              Icon(Icons.warning, size: 30, color: Colors.red),
+              SizedBox(height: 10),
               Text(
                 "Important Update!",
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: 15,
                   fontWeight: FontWeight.bold,
                   color: Colors.red,
                 ),
@@ -307,15 +363,15 @@ class _CompleteCropState extends State<CompleteCrop> {
                 "The records under the selected partner and crop will be completely deleted.\n"
                 "You can view the profit of old crops under 'Older Crops' in Settings.",
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               ),
-              SizedBox(height: 30),
+              SizedBox(height: 10),
               ElevatedButton(
-                onPressed: showSelectionDialog,
+                onPressed: isLoading ? null : showSelectionDialog,
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(horizontal: 40, vertical: 15),
                   backgroundColor: const Color.fromARGB(255, 17, 209, 11),
-                  textStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  textStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
                 ),
                 child: Text("Confirm & Complete"),
               ),
