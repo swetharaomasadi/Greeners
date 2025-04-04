@@ -31,9 +31,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  speech_to_text: ^6.1.1  # Latest stable version
-  flutter_tts: ^3.8.5
-  audioplayers: ^0.20.1
+  speech_to_text: ^7.0.0  # Latest stable version
+  flutter_tts: ^4.2.2
   
   
   # firebase_core: ^2.15.0  # Replace with latest version
