@@ -10,7 +10,7 @@ plugins {
 
 android {
     namespace = "com.example.firstly"
-    compileSdk = flutter.compileSdkVersion
+    compileSdkVersion 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -25,22 +25,30 @@ android {
     defaultConfig {
         // Unique application ID
         applicationId = "com.example.firstly"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdkVersion 30
+        targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
     }
+    
 
     buildTypes {
-        release {
-            signingConfig = signingConfigs.debug
-        }
+    release {
+        minifyEnabled true
+        shrinkResources true
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        signingConfig signingConfigs.debug
     }
+}
 
     dependencies {
-        // Vosk dependency
-        implementation 'com.github.alphacephei:vosk-api:0.3.30'
-    }
+        
+    implementation 'androidx.core:core-ktx:1.7.0'
+    implementation 'androidx.appcompat:appcompat:1.4.1'
+    implementation 'com.google.android.material:material:1.6.0'
+}
+
     sourceSets {
         main {
             assets.srcDirs += 'src/main/assets'
