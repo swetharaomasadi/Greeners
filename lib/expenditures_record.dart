@@ -34,6 +34,7 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
   bool _isDataSubmitted = false;
   Timer? _timeoutTimer;
   String? _amountError;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -60,11 +61,11 @@ class _ExpendituresRecordState extends State<ExpendituresRecord> {
     _stopListening();
   }
 
-  void _validateForm() {
-    setState(() {
-      _isSubmitEnabled = _controllers.every((controller) => controller.text.isNotEmpty);
-    });
-  }
+ void _validateForm() {
+  setState(() {
+    _isSubmitEnabled = !_isLoading && _controllers.every((controller) => controller.text.isNotEmpty);
+  });
+}
 
   bool isValidNumber(String value) {
     return RegExp(r'^[0-9]+(\.[0-9]*)?$').hasMatch(value);
@@ -156,6 +157,10 @@ double _extractNumber(String input) {
 }
 
 Future<void> _submitExpenditure() async {
+  setState(() {
+    _isLoading = true; // Set loading to true
+    _validateForm();
+  });
   User? user = FirebaseAuth.instance.currentUser;
   if (user == null) return;
 
@@ -194,6 +199,8 @@ Future<void> _submitExpenditure() async {
       _clearForm();
       setState(() {
         _isDataSubmitted = true;
+        _isLoading = false; // Set loading to false after success
+        _validateForm();
       });
 
       await flutterTts.speak("Successful completion.");  // ✅ Speak success
@@ -209,6 +216,10 @@ Future<void> _submitExpenditure() async {
       _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
       print('Error submitting record: $e');
       print('Stack trace: $stackTrace');
+      setState(() {
+        _isLoading = false; // Set loading to false after failure
+        _validateForm();
+      });
     }
   }
 }
@@ -450,17 +461,20 @@ Widget _buildTextField(String label, TextEditingController controller, int index
                 onChanged: (value) {
                   _validateForm();
                 },
+                enabled: !_isLoading, // Disable the text field when loading
               ),
             ),
             IconButton(
               icon: Icon(Icons.mic, color: (_isListening && _activeFieldIndex == index) ? Colors.red : Colors.blue),
-              onPressed: () {
-                if (_isListening && _activeFieldIndex == index) {
-                  _stopListening();
-                } else {
-                  _startListening(index);
-                }
-              },
+              onPressed: _isLoading
+                ? null // Disable the microphone button when loading
+                : () {
+                    if (_isListening && _activeFieldIndex == index) {
+                      _stopListening();
+                    } else {
+                      _startListening(index);
+                    }
+                  },
             ),
           ],
         ),
@@ -500,35 +514,43 @@ Widget _buildTextField(String label, TextEditingController controller, int index
     };
 
     return Scaffold(
-      appBar: AppBar(title: Text("Enter Expenditures"),
-      backgroundColor: const Color.fromARGB(255, 203, 161, 232),),
-      body: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Partner: ${widget.partner}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
-              _buildVoiceAssistantDisplay(),
-              _buildConfirmationMessage(),
-              ...textFields.entries.map((entry) {
-                int index = textFields.keys.toList().indexOf(entry.key);
-                return _buildTextField(entry.key, entry.value, index, isNumeric: entry.key == "Amount");
-              }).toList(),
-              SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _isSubmitEnabled ? _showConfirmationDialog : null,
-                style: ButtonStyle(
-                  backgroundColor: MaterialStateProperty.all(
-                    _isSubmitEnabled ? Colors.blue : Colors.grey,
+    appBar: AppBar(title: Text("Enter Expenditures"),
+    backgroundColor: const Color.fromARGB(255, 203, 161, 232),),
+    body: Stack(
+      children: [
+        Padding(
+          padding: EdgeInsets.all(16.0),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Partner: ${widget.partner}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
+                _buildVoiceAssistantDisplay(),
+                _buildConfirmationMessage(),
+                ...textFields.entries.map((entry) {
+                  int index = textFields.keys.toList().indexOf(entry.key);
+                  return _buildTextField(entry.key, entry.value, index, isNumeric: entry.key == "Amount");
+                }).toList(),
+                SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: (_isSubmitEnabled && !_isLoading) ? _showConfirmationDialog : null,
+                  style: ButtonStyle(
+                    backgroundColor: MaterialStateProperty.all(
+                      (_isSubmitEnabled && !_isLoading) ? Colors.blue : Colors.grey,
+                    ),
                   ),
+                  child: Text("Submit"),
                 ),
-                child: Text("Submit"),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
-  }
+        if (_isLoading)
+          Center(
+            child: CircularProgressIndicator(),
+          ),
+      ],
+    ),
+  );
+}
 }
