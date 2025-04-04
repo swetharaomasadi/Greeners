@@ -31,6 +31,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
   int _documentLimit = 10; // Default limit
   DocumentSnapshot? _lastDocument;
   final ScrollController _scrollController = ScrollController();
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -152,7 +153,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
       var duesList = allDues[docId]!;
       for (var due in duesList) {
         if (due['vendor_id'] == vendorId && due['crop_id'] == cropId && due['total_bill'] == totalBill) {
-          double oldDue = due['total_due'];
+          double oldDue = due['total_due']?.toDouble() ?? 0.0;
           double newDueAmount = oldDue - newAmountPaid;
 
           if (newDueAmount <= 0) {
@@ -178,50 +179,50 @@ class _EditDuesPageState extends State<EditDuesPage> {
   }
 
   Future<void> updateDueInFirestore(String docId, String vendorId, String cropId, double totalBill, double newDue, double newAmountPaid) async {
-    if (docId.isEmpty || vendorId.isEmpty || cropId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Invalid document ID or fields")),
-      );
-      return;
-    }
-
-    try {
-      WriteBatch batch = FirebaseFirestore.instance.batch();
-      DocumentReference dueRef = FirebaseFirestore.instance.collection('dues').doc(docId);
-      
-      // Get the existing dues array
-      DocumentSnapshot docSnapshot = await dueRef.get();
-      List<dynamic> existingDues = docSnapshot['d'] ?? [];
-
-      // Update the due entry in the array
-      List<dynamic> updatedDues = existingDues.map((due) {
-        if (due['vendor_id'] == vendorId && due['crop_id'] == cropId && due['total_bill'] == totalBill) {
-          if (newDue <= 0) {
-            return null; // Mark for removal
-          } else {
-            return {
-              ...due,
-              'total_due': newDue,
-              'amount_paid': newAmountPaid,
-            };
-          }
-        }
-        return due;
-      }).where((due) => due != null).toList();
-
-      // Update the entire dues array
-      if (updatedDues.isEmpty) {
-        batch.delete(dueRef); // Delete the entire document if no dues left
-      } else {
-        batch.update(dueRef, {'d': updatedDues});
-      }
-      await batch.commit();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error updating due: $e")),
-      );
-    }
+  if (docId.isEmpty || vendorId.isEmpty || cropId.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Invalid document ID or fields")),
+    );
+    return;
   }
+
+  try {
+    WriteBatch batch = FirebaseFirestore.instance.batch();
+    DocumentReference dueRef = FirebaseFirestore.instance.collection('dues').doc(docId);
+    
+    // Get the existing dues array
+    DocumentSnapshot docSnapshot = await dueRef.get();
+    List<dynamic> existingDues = docSnapshot['d'] ?? [];
+
+    // Update the due entry in the array
+    List<dynamic> updatedDues = existingDues.map((due) {
+      if (due['vendor_id'] == vendorId && due['crop_id'] == cropId && due['total_bill'] == totalBill) {
+        if (newDue <= 0) {
+          return null; // Mark for removal
+        } else {
+          return {
+            ...due,
+            'total_due': newDue,
+            'amount_paid': newAmountPaid,
+          };
+        }
+      }
+      return due;
+    }).where((due) => due != null).toList();
+
+    // Update the entire dues array
+    if (updatedDues.isEmpty) {
+      batch.delete(dueRef); // Delete the entire document if no dues left
+    } else {
+      batch.update(dueRef, {'d': updatedDues});
+    }
+    await batch.commit();
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Error updating due: $e")),
+    );
+  }
+}
 
   Future<void> updateDueAmount() async {
   if (selectedDueDocId == null || oldDue == null || oldAmountPaid == null) {
@@ -242,6 +243,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
   // Disable the button and show loading indicator
   setState(() {
     isConfirmEnabled = false; // Disable button
+    _isSubmitting = true; // Set submitting to true
   });
 
   try {
@@ -264,6 +266,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
   // Re-enable button and close the dialog
   setState(() {
     isConfirmEnabled = true;
+    _isSubmitting = false;
   });
 
   _dueController.clear(); // Clear the text in the controller
@@ -279,7 +282,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
     oldDue = due;
     oldAmountPaid = amountPaid;
     selectedTotalBill = totalBill;
-    isConfirmEnabled = true; // Initially enable the button
+    isConfirmEnabled = false; // Initially disable the button
   });
 
   showDialog(
@@ -310,6 +313,7 @@ class _EditDuesPageState extends State<EditDuesPage> {
                       isConfirmEnabled = enteredAmount != null && enteredAmount > 0 && enteredAmount <= (oldDue ?? 0);
                     });
                   },
+                  enabled: !_isSubmitting, // Disable the text field when submitting
                 ),
               ],
             ),
@@ -348,7 +352,6 @@ class _EditDuesPageState extends State<EditDuesPage> {
     },
   );
 }
-
   List<String> getUniqueVendors() {
     return allDues.values.expand((list) => list).map<String>((due) => due['vendor_id'] as String).toSet().toList();
   }
@@ -448,9 +451,9 @@ class _EditDuesPageState extends State<EditDuesPage> {
                                   due['vendor_id'] ?? '',
                                   due['vendor_id'] ?? '',
                                   due['crop_id'] ?? '',
-                                  due['total_due'] ?? 0,
-                                  due['amount_paid'] ?? 0,
-                                  due['total_bill'] ?? 0,
+                                  double.tryParse(due['total_due']?.toString() ?? '0') ?? 0.0,
+                                  double.tryParse(due['amount_paid']?.toString() ?? '0') ?? 0.0,
+                                  double.tryParse(due['total_bill']?.toString() ?? '0') ?? 0.0,
                                 );
                               },
                             ),
