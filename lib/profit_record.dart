@@ -32,6 +32,7 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
   double _totalBill = 0.0;
   bool _isSubmitEnabled = false;
   bool _isDataSubmitted = false;
+  bool _isLoading = false;
   Timer? _timeoutTimer;
 
   @override
@@ -71,15 +72,25 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
   }
 
   void _validateForm() {
-    setState(() {
-      _isSubmitEnabled = _controllers.every((controller) => controller.text.isNotEmpty) &&
-          (double.tryParse(_amountPaidController.text) ?? 0.0) <= _totalBill;
-    });
-  }
+  setState(() {
+    _isSubmitEnabled = !_isLoading &&
+        _controllers.every((controller) => controller.text.isNotEmpty) &&
+        (double.tryParse(_amountPaidController.text) ?? 0.0) <= _totalBill;
+  });
+}
 
   Future<void> _submitRecord() async {
+    setState(() {
+      _isLoading = true; // Set loading to true
+      _validateForm();
+    });
   User? user = FirebaseAuth.instance.currentUser;
-  if (user == null) return;
+  if (user == null) {
+      setState(() {
+        _isLoading = false; // Set loading to false if user is not logged in
+      });
+      return;
+    }
 
   double amountPaid = double.tryParse(_amountPaidController.text) ?? 0.0;
   double weight = double.tryParse(_kgsController.text) ?? 0.0;
@@ -118,11 +129,12 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
     if (mounted) {
       setState(() {
         _isDataSubmitted = true;
+        _isLoading = false; // Set loading to false after success
+        _validateForm();
       });
     }
 
     await flutterTts.speak("Successful completion.");  // ✅ Speak success
-
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
         setState(() {
@@ -136,6 +148,10 @@ class ProfitRecordScreenState extends State<ProfitRecord> {
     _showErrorDialog('Error submitting record: $e\nStack trace: $stackTrace');
     print('Error submitting record: $e');
     print('Stack trace: $stackTrace');
+    setState(() {
+        _isLoading = false; // Set loading to false after failure
+        _validateForm();
+      });
   }
 }
 
@@ -555,11 +571,14 @@ Future<void> _addRecord(String userId, WriteBatch batch, Map<String, dynamic> re
                     }
                     _validateForm();
                   },
+                  enabled: !_isLoading,
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.mic, color: (_isListening && _activeFieldIndex == index) ? Colors.red : Colors.blue),
-                onPressed: () {
+              icon: Icon(Icons.mic, color: (_isListening && _activeFieldIndex == index) ? Colors.red : Colors.blue),
+              onPressed: _isLoading
+                ? null // Disable the microphone button when loading
+                : () {
                   if (_isListening && _activeFieldIndex == index) {
                     _stopListening();
                   } else {
@@ -645,6 +664,10 @@ Widget build(BuildContext context) {
             ),
           ),
         ),
+        if (_isLoading)
+          Center(
+            child: CircularProgressIndicator(),
+          ),
         Align(
           alignment: Alignment.bottomCenter,
           child: Container(
